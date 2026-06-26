@@ -9,6 +9,7 @@
 *.dylib
 *.pdb
 balls_sim
+balls_bins_sim
 
 # Build directories
 build/

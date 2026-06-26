@@ -1,3 +1,4 @@
+#include "PowerKSimulator.h"
 #include "RandomSimulator.h"
 
 #include <algorithm>
@@ -93,9 +94,25 @@ int main() {
     random_16_bins.run();
     printSimulationSummary(random_16_bins, "Random bin per ball");
 
+    balls_bins::PowerKSimulator power_2_16_bins(10000, 16, 2);
+    power_2_16_bins.run();
+    printSimulationSummary(power_2_16_bins, "Power of 2 random choices");
+
+    balls_bins::PowerKSimulator power_3_16_bins(10000, 16, 3);
+    power_3_16_bins.run();
+    printSimulationSummary(power_3_16_bins, "Power of 3 random choices");
+
     balls_bins::RandomSimulator random_32_bins(10000, 32);
     random_32_bins.run();
     printSimulationSummary(random_32_bins, "Random bin per ball");
+
+    balls_bins::PowerKSimulator power_2_32_bins(10000, 32, 2);
+    power_2_32_bins.run();
+    printSimulationSummary(power_2_32_bins, "Power of 2 random choices");
+
+    balls_bins::PowerKSimulator power_3_32_bins(10000, 32, 3);
+    power_3_32_bins.run();
+    printSimulationSummary(power_3_32_bins, "Power of 3 random choices");
 
     return 0;
 }
