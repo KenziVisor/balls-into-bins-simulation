@@ -66,14 +66,15 @@ void printSimulationSummary(const balls_bins::SimulationBase& sim,
     std::cout << "Policy: " << policy_name << '\n';
     std::cout << "Balls: " << sim.getM() << '\n';
     std::cout << "Bins: " << sim.getN() << '\n';
+    std::cout << "Trials: " << sim.getTrials() << '\n';
     std::cout << "Average load: " << average << '\n';
-    std::cout << "Minimum bin load: " << min_load << '\n';
-    std::cout << "Maximum bin load: " << max_load << '\n';
-    std::cout << "Max-min gap: " << max_load - min_load << '\n';
+    std::cout << "Minimum averaged bin load: " << min_load << '\n';
+    std::cout << "Maximum averaged bin load: " << max_load << '\n';
+    std::cout << "Max-min gap over averaged loads: " << max_load - min_load << '\n';
     std::cout << "Standard deviation: " << computeStdDev(bins) << '\n';
-    std::cout << "Total logical cost: " << total_cost << '\n';
-    std::cout << "Cost per ball: " << cost_per_ball << '\n';
-    std::cout << "Final bin loads: ";
+    std::cout << "Average total logical cost per trial: " << total_cost << '\n';
+    std::cout << "Average cost per ball: " << cost_per_ball << '\n';
+    std::cout << "Averaged final bin loads: ";
 
     for (std::size_t i = 0; i < bins.size(); ++i) {
         if (i > 0) {
@@ -89,35 +90,37 @@ void printSimulationSummary(const balls_bins::SimulationBase& sim,
 int main() {
     std::cout << std::fixed << std::setprecision(2);
 
-    balls_bins::PowerKSimulator random_16_bins(10000, 16, 1);
+    const int trials = 1;
+
+    balls_bins::PowerKSimulator random_16_bins(10000, 16, 1, trials);
     random_16_bins.run();
     printSimulationSummary(random_16_bins, "Random bin per ball");
 
-    balls_bins::PowerKSimulator power_2_16_bins(10000, 16, 2);
+    balls_bins::PowerKSimulator power_2_16_bins(10000, 16, 2, trials);
     power_2_16_bins.run();
     printSimulationSummary(power_2_16_bins, "Power of 2 random choices");
 
-    balls_bins::PowerKSimulator power_3_16_bins(10000, 16, 3);
+    balls_bins::PowerKSimulator power_3_16_bins(10000, 16, 3, trials);
     power_3_16_bins.run();
     printSimulationSummary(power_3_16_bins, "Power of 3 random choices");
 
-    balls_bins::PowerKSimulator power_16_16_bins(10000, 16, 16);
+    balls_bins::PowerKSimulator power_16_16_bins(10000, 16, 16, trials);
     power_16_16_bins.run();
     printSimulationSummary(power_16_16_bins, "Minimal load (power of n=16)");
 
-    balls_bins::PowerKSimulator random_32_bins(10000, 32, 1);
+    balls_bins::PowerKSimulator random_32_bins(10000, 32, 1, trials);
     random_32_bins.run();
     printSimulationSummary(random_32_bins, "Random bin per ball");
 
-    balls_bins::PowerKSimulator power_2_32_bins(10000, 32, 2);
+    balls_bins::PowerKSimulator power_2_32_bins(10000, 32, 2, trials);
     power_2_32_bins.run();
     printSimulationSummary(power_2_32_bins, "Power of 2 random choices");
 
-    balls_bins::PowerKSimulator power_3_32_bins(10000, 32, 3);
+    balls_bins::PowerKSimulator power_3_32_bins(10000, 32, 3, trials);
     power_3_32_bins.run();
     printSimulationSummary(power_3_32_bins, "Power of 3 random choices");
 
-    balls_bins::PowerKSimulator power_32_32_bins(10000, 32, 32);
+    balls_bins::PowerKSimulator power_32_32_bins(10000, 32, 32, trials);
     power_32_32_bins.run();
     printSimulationSummary(power_32_32_bins, "Minimal load (power of n=32)");
 

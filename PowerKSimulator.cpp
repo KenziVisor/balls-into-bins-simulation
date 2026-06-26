@@ -5,8 +5,8 @@
 
 namespace balls_bins {
 
-PowerKSimulator::PowerKSimulator(int m, int n, int k)
-    : SimulationBase(m, n),
+PowerKSimulator::PowerKSimulator(int m, int n, int k, int trials)
+    : SimulationBase(m, n, trials),
       k_(k) {
     if (k_ <= 0) {
         throw std::invalid_argument("PowerKSimulator requires k to be positive.");
@@ -21,7 +21,7 @@ int PowerKSimulator::getK() const {
     return k_;
 }
 
-void PowerKSimulator::run() {
+void PowerKSimulator::runSingleTrial() {
     for (int ball = 0; ball < m_; ++ball) {
         const std::vector<int> candidates = drawRandomBins(k_);
 

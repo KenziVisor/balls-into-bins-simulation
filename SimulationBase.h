@@ -10,20 +10,23 @@ namespace balls_bins {
 
 class SimulationBase {
 public:
-    SimulationBase(int m, int n);
+    SimulationBase(int m, int n, int trials = 1);
     virtual ~SimulationBase() = default;
 
     int getM() const;
     int getN() const;
+    int getTrials() const;
     const std::vector<double>& getBins() const;
     double getTotalCost() const;
     double getCostWeight(const std::string& key) const;
     void setCostWeight(const std::string& key, double value);
     void reset();
 
-    virtual void run() = 0;
+    void run();
 
 protected:
+    virtual void runSingleTrial() = 0;
+
     std::vector<int> drawRandomBins(int k);
     double readBinLoad(int bin_index);
     bool lessThan(double a, double b);
@@ -32,6 +35,7 @@ protected:
 
     int m_;
     int n_;
+    int trials_;
     std::vector<double> bins_;
     std::unordered_map<std::string, double> cost_weights_;
     double total_cost_;

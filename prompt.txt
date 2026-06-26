@@ -1,0 +1,197 @@
+Refactor the simulation framework to support multiple trials controlled by the abstract base class.
+
+Before coding, read all existing files:
+- SimulationBase.h
+- SimulationBase.cpp
+- RandomSimulator.h
+- RandomSimulator.cpp
+- PowerKSimulator.h
+- PowerKSimulator.cpp
+- main.cpp
+
+Goal:
+Add a `trials` feature to SimulationBase so that every simulator can run the same policy multiple times and report averaged results.
+
+Important design:
+Use the Template Method pattern.
+
+Currently:
+- SimulationBase has `virtual void run() = 0`.
+- Derived classes override `run()` directly.
+
+Refactor to:
+- SimulationBase owns the public `run()` method.
+- Derived classes no longer override `run()`.
+- Derived classes instead override a protected pure virtual method:
+
+    virtual void runSingleTrial() = 0;
+
+SimulationBase::run() should:
+1. Validate that trials_ > 0.
+2. Run the simulation policy trials_ times.
+3. For each trial:
+   - reset bins_ to all zeros
+   - reset total_cost_ to 0
+   - call runSingleTrial()
+   - accumulate final bin loads
+   - accumulate total logical cost
+4. After all trials:
+   - replace bins_ with the average final bin loads across trials
+   - replace total_cost_ with the average total logical cost across trials
+
+Required API changes in SimulationBase:
+Constructor:
+- Change constructor from:
+
+    SimulationBase(int m, int n);
+
+  to:
+
+    SimulationBase(int m, int n, int trials = 1);
+
+Member variables:
+- Add:
+
+    int trials_;
+
+Public methods:
+- Add:
+
+    int getTrials() const;
+
+- Keep:
+
+    int getM() const;
+    int getN() const;
+    const std::vector<double>& getBins() const;
+    double getTotalCost() const;
+    double getCostWeight(const std::string& key) const;
+    void setCostWeight(const std::string& key, double value);
+    void reset();
+
+- Change:
+
+    virtual void run() = 0;
+
+  to:
+
+    void run();
+
+Protected methods:
+- Add:
+
+    virtual void runSingleTrial() = 0;
+
+- Keep the existing protected helper methods:
+    std::vector<int> drawRandomBins(int k);
+    double readBinLoad(int bin_index);
+    bool lessThan(double a, double b);
+    void addBallToBin(int bin_index);
+    void validateBinIndex(int bin_index) const;
+
+Constructor validation:
+- m must be non-negative.
+- n must be positive.
+- trials must be positive.
+- Throw std::invalid_argument if invalid.
+
+Important behavior:
+- reset() should reset bins_ to zeros and total_cost_ to 0.
+- SimulationBase::run() may call reset() internally before each single trial.
+- After SimulationBase::run() finishes, bins_ and total_cost_ should represent averaged results across trials.
+- Do not average m_, n_, trials_, or cost_weights_.
+
+Update RandomSimulator:
+- Constructor should become:
+
+    RandomSimulator(int m, int n, int trials = 1);
+
+- It should call:
+
+    SimulationBase(m, n, trials)
+
+- Replace its `void run() override` with:
+
+    void runSingleTrial() override
+
+- runSingleTrial() behavior:
+    for each ball:
+        candidates = drawRandomBins(1)
+        addBallToBin(candidates[0])
+
+Update PowerKSimulator:
+- Constructor should become:
+
+    PowerKSimulator(int m, int n, int k, int trials = 1);
+
+- It should call:
+
+    SimulationBase(m, n, trials)
+
+- Keep private member k_.
+- Keep getK() const.
+- Replace its `void run() override` with:
+
+    void runSingleTrial() override
+
+- runSingleTrial() behavior:
+    for each ball:
+        candidates = drawRandomBins(k_)
+        read candidate loads using readBinLoad()
+        compare using lessThan()
+        keep first candidate in ties
+        addBallToBin(best_bin)
+
+Update main.cpp:
+- Define a trials value near the top of main, for example:
+
+    const int trials = 100;
+
+- Pass trials into all simulator constructors.
+- Print trials in the simulation summary by using sim.getTrials().
+- Keep the existing configurations:
+    10000 balls into 16 bins
+    10000 balls into 32 bins
+- Keep the existing policies:
+    Random bin per ball
+    Power of 2 random choices
+    Power of 3 random choices
+    Absolute minimum bin, implemented as PowerKSimulator with k = n if already present
+
+Summary output:
+Update printSimulationSummary so it includes:
+- policy name
+- number of balls
+- number of bins
+- number of trials
+- average load
+- minimum averaged bin load
+- maximum averaged bin load
+- max-min gap over averaged bin loads
+- standard deviation over averaged bin loads
+- average total logical cost per trial
+- average cost per ball
+- averaged final bin loads
+
+Important note:
+For this step, it is acceptable that min, max, and stddev are computed from the averaged final bin-load vector.
+Later we may improve this by storing per-trial metrics and averaging each metric separately.
+Do not implement that extra metrics framework now.
+
+Consistency pass:
+After refactoring, scan the entire codebase and make sure:
+- No derived class overrides run().
+- Only SimulationBase implements public run().
+- Every derived class implements runSingleTrial().
+- Constructors compile with the new trials argument.
+- There are no calls to the removed single-bin draw method.
+- All random selection uses drawRandomBins(k).
+- No file uses `using namespace std;`.
+- Standard library types are fully qualified with std::.
+- No simulation manually modifies total_cost_ except inside SimulationBase helper methods.
+- The project compiles cleanly as C++17.
+
+Build command to test:
+g++ -std=c++17 -Wall -Wextra -pedantic SimulationBase.cpp RandomSimulator.cpp PowerKSimulator.cpp main.cpp -o balls_bins_sim
+
+Keep the code clean, simple, readable, and interview-friendly.

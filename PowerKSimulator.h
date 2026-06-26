@@ -7,12 +7,13 @@ namespace balls_bins {
 
 class PowerKSimulator : public SimulationBase {
 public:
-    PowerKSimulator(int m, int n, int k);
+    PowerKSimulator(int m, int n, int k, int trials = 1);
 
     int getK() const;
-    void run() override;
 
 private:
+    void runSingleTrial() override;
+
     int k_;
 };
 

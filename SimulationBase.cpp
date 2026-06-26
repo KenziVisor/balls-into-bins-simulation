@@ -7,9 +7,10 @@
 
 namespace balls_bins {
 
-SimulationBase::SimulationBase(int m, int n)
+SimulationBase::SimulationBase(int m, int n, int trials)
     : m_(m),
       n_(n),
+      trials_(trials),
       bins_(),
       cost_weights_{
           {"random_draw", 1.0},
@@ -26,6 +27,10 @@ SimulationBase::SimulationBase(int m, int n)
         throw std::invalid_argument("Number of bins must be positive.");
     }
 
+    if (trials_ <= 0) {
+        throw std::invalid_argument("Number of trials must be positive.");
+    }
+
     bins_.assign(static_cast<std::size_t>(n_), 0.0);
 }
 
@@ -35,6 +40,10 @@ int SimulationBase::getM() const {
 
 int SimulationBase::getN() const {
     return n_;
+}
+
+int SimulationBase::getTrials() const {
+    return trials_;
 }
 
 const std::vector<double>& SimulationBase::getBins() const {
@@ -61,6 +70,35 @@ void SimulationBase::setCostWeight(const std::string& key, double value) {
 void SimulationBase::reset() {
     std::fill(bins_.begin(), bins_.end(), 0.0);
     total_cost_ = 0.0;
+}
+
+void SimulationBase::run() {
+    if (trials_ <= 0) {
+        throw std::invalid_argument("Number of trials must be positive.");
+    }
+
+    std::vector<double> accumulated_bins(static_cast<std::size_t>(n_), 0.0);
+    double accumulated_cost = 0.0;
+
+    for (int trial = 0; trial < trials_; ++trial) {
+        reset();
+        runSingleTrial();
+
+        for (int bin = 0; bin < n_; ++bin) {
+            accumulated_bins[static_cast<std::size_t>(bin)] +=
+                bins_[static_cast<std::size_t>(bin)];
+        }
+
+        accumulated_cost += total_cost_;
+    }
+
+    const double trial_count = static_cast<double>(trials_);
+    for (double& load : accumulated_bins) {
+        load /= trial_count;
+    }
+
+    bins_ = accumulated_bins;
+    total_cost_ = accumulated_cost / trial_count;
 }
 
 std::vector<int> SimulationBase::drawRandomBins(int k) {
