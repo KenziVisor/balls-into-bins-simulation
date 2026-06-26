@@ -1,0 +1,26 @@
+# Build outputs
+*.o
+*.obj
+*.exe
+*.out
+*.a
+*.so
+*.dll
+*.dylib
+balls_sim
+
+# Build directories
+build/
+cmake-build-*/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
