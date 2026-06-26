@@ -1,7 +1,9 @@
 #include "SimulationBase.h"
 
 #include <algorithm>
+#include <numeric>
 #include <stdexcept>
+#include <utility>
 
 namespace balls_bins {
 
@@ -61,11 +63,29 @@ void SimulationBase::reset() {
     total_cost_ = 0.0;
 }
 
-int SimulationBase::drawRandomBin() {
-    total_cost_ += cost_weights_["random_draw"];
+std::vector<int> SimulationBase::drawRandomBins(int k) {
+    if (k <= 0) {
+        throw std::invalid_argument("Number of random bins must be positive.");
+    }
 
-    std::uniform_int_distribution<int> distribution(0, n_ - 1);
-    return distribution(rng_);
+    if (k > n_) {
+        throw std::invalid_argument("Number of random bins must be less than or equal to n.");
+    }
+
+    std::vector<int> candidates(static_cast<std::size_t>(n_));
+    std::iota(candidates.begin(), candidates.end(), 0);
+
+    for (int i = 0; i < k; ++i) {
+        std::uniform_int_distribution<int> distribution(i, n_ - 1);
+        const int swap_index = distribution(rng_);
+        std::swap(candidates[static_cast<std::size_t>(i)],
+                  candidates[static_cast<std::size_t>(swap_index)]);
+    }
+
+    total_cost_ += static_cast<double>(k) * cost_weights_["random_draw"];
+    candidates.resize(static_cast<std::size_t>(k));
+
+    return candidates;
 }
 
 double SimulationBase::readBinLoad(int bin_index) {

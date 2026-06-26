@@ -24,7 +24,7 @@ public:
     virtual void run() = 0;
 
 protected:
-    int drawRandomBin();
+    std::vector<int> drawRandomBins(int k);
     double readBinLoad(int bin_index);
     bool lessThan(double a, double b);
     void addBallToBin(int bin_index);

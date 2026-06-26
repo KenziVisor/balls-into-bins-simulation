@@ -1,5 +1,4 @@
 #include "PowerKSimulator.h"
-#include "RandomSimulator.h"
 
 #include <algorithm>
 #include <cmath>
@@ -90,7 +89,7 @@ void printSimulationSummary(const balls_bins::SimulationBase& sim,
 int main() {
     std::cout << std::fixed << std::setprecision(2);
 
-    balls_bins::RandomSimulator random_16_bins(10000, 16);
+    balls_bins::PowerKSimulator random_16_bins(10000, 16, 1);
     random_16_bins.run();
     printSimulationSummary(random_16_bins, "Random bin per ball");
 
@@ -102,7 +101,11 @@ int main() {
     power_3_16_bins.run();
     printSimulationSummary(power_3_16_bins, "Power of 3 random choices");
 
-    balls_bins::RandomSimulator random_32_bins(10000, 32);
+    balls_bins::PowerKSimulator power_16_16_bins(10000, 16, 16);
+    power_16_16_bins.run();
+    printSimulationSummary(power_16_16_bins, "Minimal load (power of n=16)");
+
+    balls_bins::PowerKSimulator random_32_bins(10000, 32, 1);
     random_32_bins.run();
     printSimulationSummary(random_32_bins, "Random bin per ball");
 
@@ -113,6 +116,10 @@ int main() {
     balls_bins::PowerKSimulator power_3_32_bins(10000, 32, 3);
     power_3_32_bins.run();
     printSimulationSummary(power_3_32_bins, "Power of 3 random choices");
+
+    balls_bins::PowerKSimulator power_32_32_bins(10000, 32, 32);
+    power_32_32_bins.run();
+    printSimulationSummary(power_32_32_bins, "Minimal load (power of n=32)");
 
     return 0;
 }
