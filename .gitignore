@@ -9,12 +9,12 @@ build/
 *.dll
 *.dylib
 *.pdb
+*.txt
 balls_sim
 balls_bins_sim
 
 # Generated experiment outputs
 results/
-plots/
 
 # Build directories
 cmake-build-*/
