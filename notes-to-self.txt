@@ -1,2 +1,0 @@
-Multinomial distribution
-Lower bound analysis
