@@ -17,7 +17,8 @@ public:
                    int trials = 1,
                    bool weighted_balls = false,
                    double max_weight = 1.0,
-                   unsigned int workload_seed = 42);
+                   unsigned int workload_seed = 42,
+                   unsigned int allocation_seed = 1337);
     virtual ~SimulationBase() = default;
 
     int getM() const;
@@ -26,6 +27,7 @@ public:
     bool isWeightedBalls() const;
     double getMaxWeight() const;
     unsigned int getWorkloadSeed() const;
+    unsigned int getAllocationSeed() const;
     const std::vector<double>& getBins() const;
     double getTotalCost() const;
     const std::vector<TrialMetrics>& getTrialMetrics() const;
@@ -61,6 +63,7 @@ protected:
     bool weighted_balls_;
     double max_weight_;
     unsigned int workload_seed_;
+    unsigned int allocation_seed_;
     std::vector<double> bins_;
     std::vector<TrialMetrics> trial_metrics_;
     AggregatedMetrics aggregated_metrics_;

@@ -12,13 +12,15 @@ SimulationBase::SimulationBase(int m,
                                int trials,
                                bool weighted_balls,
                                double max_weight,
-                               unsigned int workload_seed)
+                               unsigned int workload_seed,
+                               unsigned int allocation_seed)
     : m_(m),
       n_(n),
       trials_(trials),
       weighted_balls_(weighted_balls),
       max_weight_(max_weight),
       workload_seed_(workload_seed),
+      allocation_seed_(allocation_seed),
       bins_(),
       cost_weights_{
           {"random_draw", 1.0},
@@ -30,7 +32,7 @@ SimulationBase::SimulationBase(int m,
           {"heap_update_per_level", 1.0},
       },
       total_cost_(0.0),
-      rng_(std::random_device{}()),
+      rng_(allocation_seed_),
       workload_rng_(workload_seed_) {
     if (m_ < 0) {
         throw std::invalid_argument("Number of balls must be non-negative.");
@@ -73,6 +75,10 @@ double SimulationBase::getMaxWeight() const {
 
 unsigned int SimulationBase::getWorkloadSeed() const {
     return workload_seed_;
+}
+
+unsigned int SimulationBase::getAllocationSeed() const {
+    return allocation_seed_;
 }
 
 const std::vector<double>& SimulationBase::getBins() const {
@@ -146,6 +152,7 @@ void SimulationBase::run() {
 
     for (int trial = 0; trial < trials_; ++trial) {
         reset();
+        rng_.seed(allocation_seed_ + static_cast<unsigned int>(trial));
         workload_rng_.seed(workload_seed_ + static_cast<unsigned int>(trial));
         runSingleTrial();
 

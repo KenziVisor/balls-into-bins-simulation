@@ -16,7 +16,8 @@ public:
                                int trials = 1,
                                bool weighted_balls = false,
                                double max_weight = 1.0,
-                               unsigned int workload_seed = 42);
+                               unsigned int workload_seed = 42,
+                               unsigned int allocation_seed = 1337);
 
     int getHeapSize() const;
     int getK() const;

@@ -1,218 +1,184 @@
-We are preparing the balls-into-bins simulator for graph generation later, but do NOT implement plotting yet.
+We are one step before implementing graph/CSV generation.
 
-Current code structure:
-- SimulationBase is the abstract base class.
-- PowerKSimulator implements random / power-of-k / absolute minimum.
-- StatefulRoundRobinSimulator implements round-robin.
-- HeapSizeSPowerOfKSimulator implements a stateful heap-based policy.
-- main.cpp currently prints summaries directly.
-- Keep using the balls_bins namespace. Do not add `using namespace std;`.
+Do NOT implement plotting yet.
+Do NOT change the simulation algorithms.
+Do NOT change the metrics model unless explicitly required below.
+Keep using namespace balls_bins.
+Do not add `using namespace std;`.
 
-Goal:
-Refactor metric collection so every simulation produces clean per-trial metrics and aggregated metrics. This is needed before we later edit main.cpp to generate CSV files and graphs.
+Current state:
+- SimulationMetrics already contains TrialMetrics, AggregatedMetrics, MetricSummary, and CostBreakdown.
+- TrialMetrics already contains max_load, cv_load, average_load, cost_per_ball, and cost breakdown fields.
+- SimulationBase::run() already computes metrics per trial and aggregates them.
+- We now need a few small infrastructure fixes before adding graph generation.
 
-Important design requirement:
-Do NOT compute max/min/stddev over averaged bin loads. Instead, compute all metrics per trial, then aggregate each metric across trials.
+Goals of this change:
+1. Make simulation results reproducible.
+2. Add reference/baseline helper calculations for future CSV/graph output.
+3. Avoid changing the core metric collection if not necessary.
 
 Required changes:
 
-1. Add a new metrics type, preferably in a new file:
-   - SimulationMetrics.h
-   - If implementation helpers are needed, add SimulationMetrics.cpp.
+1. Add deterministic allocation RNG seed
 
-Create a struct TrialMetrics with at least:
+Currently workload_rng_ is seeded deterministically, but allocation RNG uses std::random_device.
+Add a new constructor parameter to SimulationBase:
 
-- double average_load;
-- double min_load;
-- double max_load;
-- double max_min_gap;
-- double stddev_load;
-- double cv_load;
-- double normalized_max_load;
-- double normalized_gap;
-- double p90_load;
-- double p95_load;
-- double total_cost;
-- double cost_per_ball;
+    unsigned int allocation_seed = 1337
 
-Also include enough cost breakdown fields to support future cost-vs-quality graphs:
+Store it as:
 
-- double random_draw_cost;
-- double load_read_cost;
-- double compare_cost;
-- double state_read_cost;
-- double state_update_cost;
-- double state_memory_cost;
-- double heap_update_cost;
+    unsigned int allocation_seed_;
 
-And optionally:
+Expose:
 
-- double stateless_cost;
-- double stateful_cost;
+    unsigned int getAllocationSeed() const;
 
-where:
-- stateless_cost = random_draw_cost + load_read_cost + compare_cost
-- stateful_cost = state_read_cost + state_update_cost + state_memory_cost + heap_update_cost
+Update all derived simulator constructors:
+- PowerKSimulator
+- StatefulRoundRobinSimulator
+- HeapSizeSPowerOfKSimulator
 
-2. Add an AggregatedMetrics struct that stores mean and sample standard deviation across trials for the important metrics.
-
-At minimum aggregate:
-- average_load
-- min_load
-- max_load
-- max_min_gap
-- stddev_load
-- cv_load
-- normalized_max_load
-- normalized_gap
-- p90_load
-- p95_load
-- total_cost
-- cost_per_ball
-- every cost breakdown field listed above
-
-Prefer a compact reusable representation if it keeps the code simple, for example:
-
-struct MetricSummary {
-    double mean;
-    double stddev;
-};
-
-struct AggregatedMetrics {
-    MetricSummary max_load;
-    MetricSummary normalized_max_load;
-    ...
-};
-
-3. Add helper functions:
-- TrialMetrics computeTrialMetrics(const std::vector<double>& bins,
-                                   double total_cost,
-                                   int balls,
-                                   const CostBreakdown& cost_breakdown);
-
-- AggregatedMetrics aggregateMetrics(const std::vector<TrialMetrics>& trials);
-
-Make percentile calculation deterministic and simple:
-- sort a copy of the bin loads
-- use nearest-rank or ceil-based percentile
-- document the chosen method in a comment
-
-4. Refactor SimulationBase to store metrics.
-
-Currently SimulationBase stores:
-- bins_
-- total_cost_
-
-Keep these, but add:
-- std::vector<TrialMetrics> trial_metrics_;
-- AggregatedMetrics aggregated_metrics_;
-- CostBreakdown cost_breakdown_;
-
-Expose getters:
-- const std::vector<TrialMetrics>& getTrialMetrics() const;
-- const AggregatedMetrics& getAggregatedMetrics() const;
-- const CostBreakdown& getCostBreakdown() const;
+They should accept allocation_seed with the same default value and pass it to SimulationBase.
 
 Important:
-- reset() should reset bins_, total_cost_, and cost_breakdown_ for the current trial.
-- run() should:
-  a. clear trial_metrics_
-  b. for each trial:
-     - reset()
-     - seed workload_rng_ as before
-     - runSingleTrial()
-     - compute TrialMetrics from that trial's final bins and costs
-     - push it into trial_metrics_
-     - accumulate bins only for optional averaged final loads / debugging
-  c. compute aggregated_metrics_ from trial_metrics_
-  d. keep bins_ as averaged final loads only for backward compatibility/debugging
-  e. keep total_cost_ as mean total cost across trials for backward compatibility
+- Do not break existing call sites. Keep defaults so current code compiles.
+- In SimulationBase::run(), for each trial, seed allocation RNG deterministically:
 
-5. Refactor cost accounting.
+    rng_.seed(allocation_seed_ + static_cast<unsigned int>(trial));
 
-Right now total_cost_ is incremented directly in multiple places. Keep total_cost_, but also track cost by category.
+- Keep workload_rng_ seeding as it is:
 
-Create:
+    workload_rng_.seed(workload_seed_ + static_cast<unsigned int>(trial));
 
-struct CostBreakdown {
-    double random_draw = 0.0;
-    double load_read = 0.0;
-    double compare = 0.0;
-    double state_read = 0.0;
-    double state_update = 0.0;
-    double state_memory = 0.0;
-    double heap_update = 0.0;
+This ensures:
+- weighted ball sequence is deterministic
+- random bin choices are deterministic
+- repeated runs produce identical CSV/graph data
 
-    double total() const;
-    double statelessCost() const;
-    double statefulCost() const;
-};
+2. Add reference baseline helpers
 
-Add protected helper methods in SimulationBase:
-- void addRandomDrawCost(double units);
-- void addLoadReadCost(double units);
-- void addCompareCost(double units);
-- void addStateReadCost(double units);
-- void addStateUpdateCost(double units);
-- void addStateMemoryCost(double units);
-- void addHeapUpdateCost(double units);
+Create a small new header/source pair if appropriate:
 
-Each helper should multiply units by the matching cost weight, update cost_breakdown_, and update total_cost_.
+    SimulationReferences.h
+    SimulationReferences.cpp
 
-Then replace direct `total_cost_ += ...` usage in all simulators with the helper methods.
+or add this to SimulationMetrics if you prefer, but keep the code clean.
 
-Examples:
-- drawRandomBins(k): addRandomDrawCost(k)
-- readBinLoad(): addLoadReadCost(1)
-- lessThan(): addCompareCost(1)
-- StatefulRoundRobinSimulator state read/update/memory should use addStateReadCost/addStateUpdateCost/addStateMemoryCost
-- HeapSizeSPowerOfKSimulator heap update should use addHeapUpdateCost(levels)
-- comparisons inside HeapSizeSPowerOfKSimulator should use addCompareCost(1)
+Add:
 
-6. Preserve existing behavior.
+    enum class ReferenceType {
+        None,
+        UnweightedOptimal,
+        WeightedAverageLowerBound
+    };
 
-Do not change the allocation algorithms.
-Do not change tie-breaking behavior.
-Do not remove weighted ball support.
+    struct ReferenceMetrics {
+        ReferenceType type = ReferenceType::None;
+        double max_load = 0.0;
+        double cv_load = 0.0;
+    };
+
+Add helper functions:
+
+    double computeUnweightedOptimalMaxLoad(int balls, int bins);
+
+Should return:
+
+    ceil(static_cast<double>(balls) / bins)
+
+and handle balls == 0 correctly.
+
+Add:
+
+    double computeUnweightedOptimalCvLoad(int balls, int bins);
+
+Definition:
+- For unweighted balls, the optimal allocation places:
+  - remainder bins with ceil(m/n)
+  - the rest with floor(m/n)
+- Compute the population standard deviation of this optimal load vector.
+- Divide by the average load.
+- If average load is zero, return 0.
+
+This is important because if m is not divisible by n, optimal CV is not zero.
+
+Add:
+
+    ReferenceMetrics computeReferenceMetrics(int balls,
+                                             int bins,
+                                             bool weighted_balls,
+                                             double average_load);
+
+Behavior:
+- If weighted_balls == false:
+    type = ReferenceType::UnweightedOptimal
+    max_load = computeUnweightedOptimalMaxLoad(balls, bins)
+    cv_load = computeUnweightedOptimalCvLoad(balls, bins)
+
+- If weighted_balls == true:
+    type = ReferenceType::WeightedAverageLowerBound
+    max_load = average_load
+    cv_load = 0.0 or NaN, whichever is simpler and safer for CSV export later.
+    Prefer 0.0 if you do not want to handle NaN in CSV.
+
+Comment clearly:
+- Weighted average load is only a lower bound on max_load.
+- The true weighted optimum requires solving a partition/bin-packing style problem and is not computed here.
+
+3. Add string conversion for ReferenceType
+
+Add:
+
+    std::string referenceTypeToString(ReferenceType type);
+
+Return exactly:
+- "none"
+- "unweighted_optimal"
+- "weighted_average_lower_bound"
+
+This will be used later by CSV export.
+
+4. Make sure Makefile includes any new .cpp/.h files
+
+If you add SimulationReferences.cpp, update SOURCES in Makefile.
+If you add SimulationReferences.h, add it to the dependency list.
+
+5. Update main.cpp minimally
+
+Do not redesign main.cpp yet.
 Do not implement CSV export yet.
-Do not implement plotting yet.
-Do not redesign main.cpp yet, except minimally to compile with the new metrics API.
+Do not implement graph generation yet.
 
-7. Update printSimulationSummary in main.cpp to use AggregatedMetrics.
+Only update constructor calls if needed because of the new allocation_seed parameter.
+Use the default allocation seed wherever possible.
 
-For now, print the same general summary, but use aggregated metrics instead of recomputing metrics from sim.getBins().
+Optionally print allocation seed in the summary if it is simple, but this is not required.
 
-Print at least:
-- Average load mean
-- Max load mean ± stddev
-- Normalized max load mean ± stddev
-- Max-min gap mean ± stddev
-- CV mean ± stddev
-- P90/P95 load mean
-- Cost per ball mean ± stddev
-- Cost breakdown per ball:
-  - random draw
-  - load read
-  - compare
-  - state read/update/memory
-  - heap update
+6. Validation
 
-Keep printing averaged final bin loads optional or remove it from the main output to reduce noise. If you keep it, label it as debug/backward-compatible output.
+After the change:
+- make should compile with:
+    -std=c++17 -Wall -Wextra -pedantic
 
-8. Validation expectations.
+- Running the program twice should produce identical numeric results for random/power-k simulations.
 
-After the refactor:
-- `make` should compile cleanly with -std=c++17 -Wall -Wextra -pedantic.
-- Running the program should still execute all existing simulation scenarios.
-- For trials = 1, stddev across trials should be 0.
-- For unweighted balls, average_load should be exactly or very close to m/n.
-- normalized_max_load should be max_load / average_load.
-- normalized_gap should be (max_load - min_load) / average_load.
-- cost_per_ball should be total_cost / m, with 0 when m == 0.
+- Existing simulations should still run.
 
-9. Keep code style simple.
+- For unweighted:
+    computeUnweightedOptimalMaxLoad(10000, 16) == 625
+    computeUnweightedOptimalMaxLoad(10000, 32) == 313
 
-Prefer readable C++17 over clever abstractions.
-Use std::vector, std::string, std::unordered_map only where needed.
-Avoid global mutable state.
-Keep all new types inside namespace balls_bins.
+- For unweighted optimal CV:
+    computeUnweightedOptimalCvLoad(10000, 16) == 0
+    computeUnweightedOptimalCvLoad(10000, 32) > 0
+
+- For weighted reference:
+    reference max_load should equal aggregated average_load.mean, which is total_weight / n.
+
+7. Keep code style simple
+
+Prefer readable helper functions.
+Avoid over-engineering.
+Avoid templates unless clearly useful.
+Keep all new code inside namespace balls_bins.
