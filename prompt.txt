@@ -1,91 +1,58 @@
-We need to fix the weighted-balls workload generation in the existing C++ balls-into-bins simulation.
+We are extending the current C++ balls-into-bins simulation.
 
-Current structure:
+Current code state:
 
 * SimulationBase is the abstract base class.
 * PowerKSimulator inherits from SimulationBase.
 * StatefulRoundRobinSimulator inherits from SimulationBase.
+* Weighted balls are already implemented in SimulationBase using:
+
+  * bool weighted_balls_
+  * double max_weight_
+  * unsigned int workload_seed_
+  * std::mt19937 workload_rng_
+* SimulationBase already has:
+
+  * drawBallWeight()
+  * previewBallWeights()
+  * addBallToBin(int bin_index, double weight)
+* Ball-weight generation must not add logical cost.
+* drawRandomBins() uses the policy RNG and charges "random_draw".
 * The project uses namespace balls_bins.
 * Do not use `using namespace std;`.
-* Keep the code simple and interview-readable.
-
-Problem:
-Weighted balls currently introduce experimental noise if every simulator generates its own unrelated sequence of weights.
+* Keep the implementation simple, explicit, and interview-readable.
 
 Goal:
-All simulator policies should run on the same ball-weight sequence when they use the same:
+Implement a new simulator class:
 
-* m
-* weighted_balls flag
-* max_weight
-* workload_seed
-* trial index
+HeapSizeSPowerOfKSimulator
 
-This should be done without storing all ball weights in a vector as part of the simulator state.
+This class models a partial persistent heap policy.
 
-Design:
-Separate the randomness used for workload generation from the randomness used by placement policies.
+Definitions:
 
-In SimulationBase:
+* n = number of bins
+* m = number of balls
+* s = persistent heap size, i.e. number of bins tracked in the heap
+* k = number of bins sampled from the untracked bins on each placement decision
 
-* Keep the existing RNG for policy randomness, or rename it to policy_rng_ if convenient.
-* Add a separate RNG for workload generation:
-  std::mt19937 workload_rng_;
-* Add a workload seed:
-  unsigned int workload_seed_;
+Policy intuition:
+The simulator maintains a persistent heap of s tracked bins.
+For each ball:
 
-Update the SimulationBase constructor signature to include a workload seed:
+1. Optionally inspect k bins from outside the heap.
+2. Find the minimum-load inspected untracked bin.
+3. Try to admit that candidate into the heap.
+4. Place the ball into the minimum-load bin currently tracked by the heap.
+5. Update the heap entry after placement.
 
-SimulationBase(
+Constructor:
+Create:
+
+HeapSizeSPowerOfKSimulator(
 int m,
 int n,
-int trials = 1,
-bool weighted_balls = false,
-double max_weight = 1.0,
-unsigned int workload_seed = 42
-);
-
-If the existing constructor already includes weighted_balls and max_weight, only add workload_seed after them.
-
-Validation:
-
-* max_weight_ must be >= 1.0.
-* workload_seed_ should be stored as provided.
-
-Add a public getter:
-unsigned int getWorkloadSeed() const;
-
-Important behavior:
-At the beginning of every trial, before runSingleTrial() is called, reset the workload RNG to a deterministic trial-specific seed:
-
-workload_rng_.seed(workload_seed_ + static_cast<unsigned int>(trial));
-
-This ensures that:
-
-* Trial 0 always gets the same workload sequence for the same workload_seed.
-* Trial 1 gets a different but deterministic workload sequence.
-* Different policies get identical ball weights for the same trial when configured with the same workload_seed.
-
-drawBallWeight():
-
-* Must use workload_rng_, not the policy RNG.
-* If weighted_balls_ is false, return 1.0.
-* If weighted_balls_ is true, draw from std::uniform_real_distribution<double>(1.0, max_weight_).
-* drawBallWeight() must never modify total_cost_.
-* Do not add a weight_draw cost key.
-* Do not reuse random_draw cost for ball weights.
-
-Policy randomness:
-
-* drawRandomBins() must continue to use the policy RNG, not workload_rng_.
-* random_draw cost should still apply only to random bin selection.
-
-Update derived constructors:
-PowerKSimulator constructor should accept and forward workload_seed:
-
-PowerKSimulator(
-int m,
-int n,
+int s,
 int k,
 int trials = 1,
 bool weighted_balls = false,
@@ -93,89 +60,246 @@ double max_weight = 1.0,
 unsigned int workload_seed = 42
 );
 
-StatefulRoundRobinSimulator constructor should accept and forward workload_seed:
+Forward m, n, trials, weighted_balls, max_weight, and workload_seed to SimulationBase.
 
-StatefulRoundRobinSimulator(
-int m,
-int n,
-int trials = 1,
-bool weighted_balls = false,
-double max_weight = 1.0,
-unsigned int workload_seed = 42
-);
+Validation:
 
-Verification support:
-Add a public method to SimulationBase:
+* 1 <= s <= n
+* If s < n:
 
-std::vector<double> previewBallWeights(int count, int trial_index = 0) const;
+  * 1 <= k <= n - s
+* If s == n:
 
-Behavior:
+  * k is irrelevant because all bins are tracked.
+  * Allow k == 0.
+  * Do not require k >= 1 in this case.
+  * Do not sample outside the heap.
+  * Do not charge random_draw, outside load reads, or outside comparisons.
+* Throw std::invalid_argument for invalid configurations.
 
-* It should not modify the simulator’s actual workload_rng_ state.
-* It should create a local std::mt19937 preview_rng seeded with:
-  workload_seed_ + static_cast<unsigned int>(trial_index)
-* If count is negative, throw std::invalid_argument.
-* If weighted_balls_ is false, return count values of 1.0.
-* If weighted_balls_ is true, use preview_rng to generate count weights from [1.0, max_weight_].
-* It must not modify total_cost_.
-* It should be used only for reproducibility/debug verification.
+Public getters:
 
-main.cpp verification:
-Add an explicit sanity check in main.cpp before running the simulation summaries.
+* int getHeapSize() const;
+* int getK() const;
 
-Implement a helper function in main.cpp, for example:
+Files:
 
-void printWorkloadPreviewCheck() {
-const int balls = 10000;
-const int bins = 16;
-const int trials = 1;
-const double max_weight = 10.0;
-const unsigned int workload_seed = 42;
-const int preview_count = 10;
+* Create HeapSizeSPowerOfKSimulator.h
+* Create HeapSizeSPowerOfKSimulator.cpp
+* Update Makefile so HeapSizeSPowerOfKSimulator.cpp and HeapSizeSPowerOfKSimulator.h are included.
+* Update main.cpp to include and run the new simulator.
 
-```
-balls_bins::PowerKSimulator power2(
-    balls, bins, 2, trials, true, max_weight, workload_seed);
+Internal state:
+Use a private struct, for example:
 
-balls_bins::StatefulRoundRobinSimulator round_robin(
-    balls, bins, trials, true, max_weight, workload_seed);
+struct HeapEntry {
+double load;
+int bin_index;
+};
 
-const std::vector<double> power_weights =
-    power2.previewBallWeights(preview_count);
+Maintain:
 
-const std::vector<double> rr_weights =
-    round_robin.previewBallWeights(preview_count);
+* std::vector<HeapEntry> heap_;
+* std::vector<bool> is_tracked_;
+* int s_;
+* int k_;
 
-const bool match = (power_weights == rr_weights);
+Use std::make_heap, std::push_heap, std::pop_heap, or simple vector operations if clearer.
 
-std::cout << "Workload preview match: "
-          << (match ? "yes" : "no") << '\n';
+Important heap ordering:
+C++ heap helpers create max-heaps by default, so be careful.
+We need the policy to retrieve the minimum-load tracked bin.
+Use a comparator or helper functions so that:
 
-std::cout << "First " << preview_count
-          << " workload weights: ";
+* Smaller load is better.
+* If loads are equal, smaller bin_index is better.
+* The heap root should represent the minimum tracked bin.
 
-for (int i = 0; i < preview_count; ++i) {
-    if (i > 0) {
-        std::cout << ", ";
-    }
-    std::cout << power_weights[static_cast<std::size_t>(i)];
-}
+Keep deterministic tie-breaking.
 
-std::cout << "\n\n";
-```
+Trial initialization:
+At the beginning of every runSingleTrial():
 
-}
+* Clear heap_.
+* Reset is_tracked_ to size n_, all false.
+* Initialize the heap with bin indices 0, 1, ..., s_ - 1.
+* Mark these bins as tracked.
+* Initial loads are 0.0 because SimulationBase::reset() has already cleared bins_.
+* Charge persistent state memory once per trial:
+  total_cost_ += static_cast<double>(s_) * cost_weights_["state_memory_per_slot"];
 
-Then call printWorkloadPreviewCheck() near the beginning of main(), before the simulation runs.
+Cost model:
+The total_cost_ metric measures only operational placement-policy cost.
+Do not charge any cost for drawing ball weights.
+Do not add a "weight_draw" cost.
+Do not reuse "random_draw" for ball weights.
+
+Use existing cost keys:
+
+* "random_draw": randomly sampling an untracked candidate bin
+* "load_read": reading actual bin load from bins_
+* "compare": load comparisons
+* "state_read": reading persistent heap/tracked state
+* "state_update": modifying persistent heap/tracked state
+* "state_memory_per_slot": persistent heap memory
+
+Add a new default cost key to SimulationBase:
+
+* "heap_update_per_level" with default value 1.0
+
+Add a private helper:
+int heapUpdateLevels() const;
+
+Return:
+
+* 1 if s_ <= 1
+* otherwise ceil(log2(s_ + 1))
+
+Whenever the heap is rebuilt/reordered after an update, charge:
+total_cost_ += static_cast<double>(heapUpdateLevels()) * cost_weights_["heap_update_per_level"];
+
+Do not over-engineer exact heap internals. The goal is a logical cost model that captures O(log s) heap update behavior.
+
+Untracked sampling logic:
+If s_ == n_:
+
+* Skip all outside sampling/admission logic.
+* Do not charge random_draw.
+* Do not charge outside load_read.
+* Do not charge outside compare.
+* The policy is a full persistent heap over all bins.
+
+If s_ < n_:
+There are n_ - s_ untracked bins.
+
+Special case: k_ == n_ - s_
+
+* This means we inspect all untracked bins.
+* Do not charge random_draw, because this is not random sampling.
+* Iterate over all currently untracked bins.
+* For each untracked bin:
+
+  * read its load using readBinLoad(bin), so load_read is charged.
+* Use comparison charging to find the minimum-load untracked bin.
+* This models checking all untracked bins, not randomly sampling them.
+
+General case: k_ < n_ - s_
+
+* Randomly sample k_ distinct bins from the currently untracked bins.
+* Do not use drawRandomBins(k_) directly, because it samples from all bins and may include tracked bins.
+* Implement a helper that samples from untracked bins only.
+* Charge:
+  total_cost_ += static_cast<double>(k_) * cost_weights_["random_draw"];
+* For each sampled bin:
+
+  * read its current load using readBinLoad(bin)
+* Use comparison charging to find the minimum sampled untracked bin.
+
+Admission logic:
+After finding the best untracked candidate:
+
+* Find the heaviest currently tracked bin in heap_.
+* For simplicity, scan heap_.
+* When scanning heap_:
+
+  * charge state_read for each heap entry inspected
+  * charge compare for comparisons
+* The heaviest tracked bin is the worst tracked entry:
+
+  * larger load is worse
+  * if loads are equal, evict the larger bin_index for deterministic behavior
+* Admit the candidate if:
+  candidate_load <= heaviest_tracked_load
+* Use <= intentionally so that early in the simulation, when many loads are equal, untracked bins can enter the heap.
+* If admitted:
+
+  * Mark the evicted bin as untracked in is_tracked_
+  * Mark the candidate bin as tracked
+  * Replace the heaviest heap entry with the candidate
+  * Charge state_update for modifying persistent state
+  * Rebuild/reorder heap_
+  * Charge heap_update_per_level * heapUpdateLevels()
+* If not admitted:
+
+  * Do not modify heap_
+  * Do not charge state_update
+
+Placement logic per ball:
+For each ball:
+
+1. Draw the ball weight using drawBallWeight().
+
+   * This must not charge cost.
+2. If s_ < n_, perform outside sampling and admission.
+
+   * If s_ == n_, skip this entirely.
+3. Read the minimum tracked bin from the heap root.
+
+   * Charge state_read.
+4. Add the ball to that bin using addBallToBin(min_bin, ball_weight).
+5. Update the heap root load by adding ball_weight.
+
+   * Charge state_update.
+6. Reorder heap_ after the root load changed.
+
+   * Charge heap_update_per_level * heapUpdateLevels().
 
 Important:
+The canonical bin loads are still bins_ in SimulationBase.
+The heap stores a policy-state copy of the tracked loads.
+Whenever a ball is added to a tracked bin, update both:
 
-* This check should compare a weighted PowerKSimulator and a weighted StatefulRoundRobinSimulator configured with the same max_weight and workload_seed.
-* It should print "Workload preview match: yes" when the implementation is correct.
-* This verification is intentionally lightweight and may remain in main.cpp for now.
-* Do not store all 10000 weights in the simulator.
-* Do not change the meaning of total_cost_.
-* Do not charge cost for previewing or drawing weights.
-* Do not change the unweighted behavior.
+* bins_ using addBallToBin()
+* the corresponding HeapEntry load
+
+Weighted balls:
+
+* Use drawBallWeight() exactly once per ball.
+* If weighted_balls is false, every ball weight is 1.0.
+* If weighted_balls is true, use the existing deterministic workload RNG behavior from SimulationBase.
+* Do not store all ball weights.
+
+main.cpp:
+
+* Add:
+  #include "HeapSizeSPowerOfKSimulator.h"
+
+Add example runs for 16 bins:
+
+1. Full heap:
+   HeapSizeSPowerOfKSimulator(10000, 16, 16, 0, trials)
+   Label: "Unweighted full heap (s=16)"
+
+2. Partial heap with random outside sampling:
+   HeapSizeSPowerOfKSimulator(10000, 16, 4, 2, trials)
+   Label: "Unweighted partial heap (s=4, k=2)"
+
+3. Partial heap with full outside scan:
+   HeapSizeSPowerOfKSimulator(10000, 16, 4, 12, trials)
+   Label: "Unweighted partial heap full outside scan (s=4, k=12)"
+
+Add equivalent weighted examples using:
+
+* weighted_balls = true
+* max_weight = weighted_max_weight
+* workload_seed = workload_seed
+
+At minimum, include:
+
+* Weighted full heap for 16 bins
+* Weighted partial heap (s=4, k=2) for 16 bins
+
+Optional:
+Add 32-bin examples too if the main file remains readable.
+
+Use the existing printSimulationSummary function.
+
+Correctness requirements:
+
+* If s == n, the simulator must not charge any outside sampling/admission costs.
+* If k == n - s, the simulator must not charge random_draw, but must charge load_read and compare for finding the minimum among all untracked bins.
+* If k < n - s, the simulator must charge random_draw once per sampled untracked bin.
+* Sampling must never include bins currently tracked in the heap.
+* Do not change the behavior of PowerKSimulator or StatefulRoundRobinSimulator.
 * Keep all code inside namespace balls_bins.
-* Update headers, cpp files, and Makefile if needed.
+* Prefer clarity over cleverness.

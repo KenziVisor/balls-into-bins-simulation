@@ -1,3 +1,4 @@
+#include "HeapSizeSPowerOfKSimulator.h"
 #include "PowerKSimulator.h"
 #include "StatefulRoundRobinSimulator.h"
 
@@ -145,6 +146,20 @@ int main() {
     power_16_16_bins.run();
     printSimulationSummary(power_16_16_bins, "Unweighted minimal load (power of n=16)");
 
+    balls_bins::HeapSizeSPowerOfKSimulator full_heap_16_bins(10000, 16, 16, 0, trials);
+    full_heap_16_bins.run();
+    printSimulationSummary(full_heap_16_bins, "Unweighted full heap (s=16)");
+
+    balls_bins::HeapSizeSPowerOfKSimulator partial_heap_16_bins(10000, 16, 4, 2, trials);
+    partial_heap_16_bins.run();
+    printSimulationSummary(partial_heap_16_bins, "Unweighted partial heap (s=4, k=2)");
+
+    balls_bins::HeapSizeSPowerOfKSimulator partial_heap_full_scan_16_bins(
+        10000, 16, 4, 12, trials);
+    partial_heap_full_scan_16_bins.run();
+    printSimulationSummary(partial_heap_full_scan_16_bins,
+                           "Unweighted partial heap full outside scan (s=4, k=12)");
+
     balls_bins::StatefulRoundRobinSimulator round_robin_16_bins(10000, 16, trials);
     round_robin_16_bins.run();
     printSimulationSummary(round_robin_16_bins, "Unweighted stateful round-robin");
@@ -160,6 +175,18 @@ int main() {
     weighted_power_2_16_bins.run();
     printSimulationSummary(weighted_power_2_16_bins,
                            "Weighted power of 2 random choices (max weight 10)");
+
+    balls_bins::HeapSizeSPowerOfKSimulator weighted_full_heap_16_bins(
+        10000, 16, 16, 0, trials, true, weighted_max_weight, workload_seed);
+    weighted_full_heap_16_bins.run();
+    printSimulationSummary(weighted_full_heap_16_bins,
+                           "Weighted full heap (s=16, max weight 10)");
+
+    balls_bins::HeapSizeSPowerOfKSimulator weighted_partial_heap_16_bins(
+        10000, 16, 4, 2, trials, true, weighted_max_weight, workload_seed);
+    weighted_partial_heap_16_bins.run();
+    printSimulationSummary(weighted_partial_heap_16_bins,
+                           "Weighted partial heap (s=4, k=2, max weight 10)");
 
     balls_bins::PowerKSimulator random_32_bins(10000, 32, 1, trials);
     random_32_bins.run();
