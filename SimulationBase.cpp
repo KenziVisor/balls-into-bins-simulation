@@ -83,6 +83,18 @@ double SimulationBase::getTotalCost() const {
     return total_cost_;
 }
 
+const std::vector<TrialMetrics>& SimulationBase::getTrialMetrics() const {
+    return trial_metrics_;
+}
+
+const AggregatedMetrics& SimulationBase::getAggregatedMetrics() const {
+    return aggregated_metrics_;
+}
+
+const CostBreakdown& SimulationBase::getCostBreakdown() const {
+    return cost_breakdown_;
+}
+
 double SimulationBase::getCostWeight(const std::string& key) const {
     const auto it = cost_weights_.find(key);
     if (it == cost_weights_.end()) {
@@ -119,6 +131,7 @@ void SimulationBase::setCostWeight(const std::string& key, double value) {
 
 void SimulationBase::reset() {
     std::fill(bins_.begin(), bins_.end(), 0.0);
+    cost_breakdown_ = {};
     total_cost_ = 0.0;
 }
 
@@ -127,6 +140,7 @@ void SimulationBase::run() {
         throw std::invalid_argument("Number of trials must be positive.");
     }
 
+    trial_metrics_.clear();
     std::vector<double> accumulated_bins(static_cast<std::size_t>(n_), 0.0);
     double accumulated_cost = 0.0;
 
@@ -134,6 +148,9 @@ void SimulationBase::run() {
         reset();
         workload_rng_.seed(workload_seed_ + static_cast<unsigned int>(trial));
         runSingleTrial();
+
+        trial_metrics_.push_back(
+            computeTrialMetrics(bins_, total_cost_, m_, cost_breakdown_));
 
         for (int bin = 0; bin < n_; ++bin) {
             accumulated_bins[static_cast<std::size_t>(bin)] +=
@@ -150,6 +167,7 @@ void SimulationBase::run() {
 
     bins_ = accumulated_bins;
     total_cost_ = accumulated_cost / trial_count;
+    aggregated_metrics_ = aggregateMetrics(trial_metrics_);
 }
 
 std::vector<int> SimulationBase::drawRandomBins(int k) {
@@ -171,7 +189,7 @@ std::vector<int> SimulationBase::drawRandomBins(int k) {
                   candidates[static_cast<std::size_t>(swap_index)]);
     }
 
-    total_cost_ += static_cast<double>(k) * cost_weights_["random_draw"];
+    addRandomDrawCost(static_cast<double>(k));
     candidates.resize(static_cast<std::size_t>(k));
 
     return candidates;
@@ -188,13 +206,13 @@ double SimulationBase::drawBallWeight() {
 
 double SimulationBase::readBinLoad(int bin_index) {
     validateBinIndex(bin_index);
-    total_cost_ += cost_weights_["load_read"];
+    addLoadReadCost(1.0);
 
     return bins_[static_cast<std::size_t>(bin_index)];
 }
 
 bool SimulationBase::lessThan(double a, double b) {
-    total_cost_ += cost_weights_["compare"];
+    addCompareCost(1.0);
     return a < b;
 }
 
@@ -207,6 +225,48 @@ void SimulationBase::validateBinIndex(int bin_index) const {
     if (bin_index < 0 || bin_index >= n_) {
         throw std::out_of_range("Bin index is out of range.");
     }
+}
+
+void SimulationBase::addRandomDrawCost(double units) {
+    const double cost = units * cost_weights_["random_draw"];
+    cost_breakdown_.random_draw += cost;
+    total_cost_ += cost;
+}
+
+void SimulationBase::addLoadReadCost(double units) {
+    const double cost = units * cost_weights_["load_read"];
+    cost_breakdown_.load_read += cost;
+    total_cost_ += cost;
+}
+
+void SimulationBase::addCompareCost(double units) {
+    const double cost = units * cost_weights_["compare"];
+    cost_breakdown_.compare += cost;
+    total_cost_ += cost;
+}
+
+void SimulationBase::addStateReadCost(double units) {
+    const double cost = units * cost_weights_["state_read"];
+    cost_breakdown_.state_read += cost;
+    total_cost_ += cost;
+}
+
+void SimulationBase::addStateUpdateCost(double units) {
+    const double cost = units * cost_weights_["state_update"];
+    cost_breakdown_.state_update += cost;
+    total_cost_ += cost;
+}
+
+void SimulationBase::addStateMemoryCost(double units) {
+    const double cost = units * cost_weights_["state_memory_per_slot"];
+    cost_breakdown_.state_memory += cost;
+    total_cost_ += cost;
+}
+
+void SimulationBase::addHeapUpdateCost(double units) {
+    const double cost = units * cost_weights_["heap_update_per_level"];
+    cost_breakdown_.heap_update += cost;
+    total_cost_ += cost;
 }
 
 }  // namespace balls_bins

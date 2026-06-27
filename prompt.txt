@@ -1,150 +1,218 @@
-Review and fix the current HeapSizeSPowerOfKSimulator implementation.
+We are preparing the balls-into-bins simulator for graph generation later, but do NOT implement plotting yet.
 
-Current issue:
-The simulator currently reconstructs the list of untracked bins by scanning all n bins inside sampleUntrackedBins() and in the full-outside-scan path.
-
-This is not acceptable for the policy logic. The simulator should logically know which bins are inside the heap and which bins are outside the heap as part of the heap policy state.
-
-Important modeling decision:
-Knowing heap membership is part of the heap abstraction.
-Do not charge additional logical memory cost for maintaining membership/indexing structures.
-The logical persistent memory cost remains:
-
-s_ * cost_weights_["state_memory_per_slot"]
-
-Do not add extra memory costs for helper vectors or position maps.
+Current code structure:
+- SimulationBase is the abstract base class.
+- PowerKSimulator implements random / power-of-k / absolute minimum.
+- StatefulRoundRobinSimulator implements round-robin.
+- HeapSizeSPowerOfKSimulator implements a stateful heap-based policy.
+- main.cpp currently prints summaries directly.
+- Keep using the balls_bins namespace. Do not add `using namespace std;`.
 
 Goal:
-Avoid logically O(n) work when k < n - s.
-Sampling k untracked bins should be O(k), not O(n).
+Refactor metric collection so every simulation produces clean per-trial metrics and aggregated metrics. This is needed before we later edit main.cpp to generate CSV files and graphs.
 
-Required design:
-In HeapSizeSPowerOfKSimulator, add and maintain:
+Important design requirement:
+Do NOT compute max/min/stddev over averaged bin loads. Instead, compute all metrics per trial, then aggregate each metric across trials.
 
-std::vector<int> untracked_bins_;
-std::vector<int> heap_positions_;
-std::vector<int> untracked_positions_;
+Required changes:
 
-Semantics:
+1. Add a new metrics type, preferably in a new file:
+   - SimulationMetrics.h
+   - If implementation helpers are needed, add SimulationMetrics.cpp.
 
-* untracked_bins_ stores all bins currently outside the heap.
-* heap_positions_[bin] is the current index of bin inside heap_, or -1 if bin is not tracked.
-* untracked_positions_[bin] is the current index of bin inside untracked_bins_, or -1 if bin is tracked.
+Create a struct TrialMetrics with at least:
 
-These structures are part of the heap/membership representation and should not add logical memory cost.
+- double average_load;
+- double min_load;
+- double max_load;
+- double max_min_gap;
+- double stddev_load;
+- double cv_load;
+- double normalized_max_load;
+- double normalized_gap;
+- double p90_load;
+- double p95_load;
+- double total_cost;
+- double cost_per_ball;
 
-Trial initialization:
-In initializeTrialState():
+Also include enough cost breakdown fields to support future cost-vs-quality graphs:
 
-* Clear heap_ and untracked_bins_.
-* Resize heap_positions_ and untracked_positions_ to n_ and initialize all entries to -1.
-* Add bins 0..s_-1 to heap_.
-* Set heap_positions_[bin] for those bins.
-* Add bins s_..n_-1 to untracked_bins_.
-* Set untracked_positions_[bin] for those bins.
-* Build the heap.
-* Charge only:
-  total_cost_ += static_cast<double>(s_) * cost_weights_["state_memory_per_slot"];
+- double random_draw_cost;
+- double load_read_cost;
+- double compare_cost;
+- double state_read_cost;
+- double state_update_cost;
+- double state_memory_cost;
+- double heap_update_cost;
 
-Do not use std::vector<bool> is_tracked_ anymore unless you keep it only as a redundant debug aid. Prefer removing it to avoid inconsistent state.
+And optionally:
 
-Sampling logic:
-Update sampleUntrackedBins(int count):
+- double stateless_cost;
+- double stateful_cost;
 
-* It must not scan all n bins.
-* It should sample count distinct bins from untracked_bins_ using partial shuffle over untracked_bins_ indices.
-* It should not permanently reorder untracked_bins_ unless that is intentional and positions are updated correctly.
-* Simpler preferred implementation:
+where:
+- stateless_cost = random_draw_cost + load_read_cost + compare_cost
+- stateful_cost = state_read_cost + state_update_cost + state_memory_cost + heap_update_cost
 
-  * Create a local vector<int> sampled_indices containing 0..untracked_bins_.size()-1
-  * Partial shuffle sampled_indices for count entries
-  * Return untracked_bins_[sampled_indices[i]]
-    This still allocates O(n-s), so avoid that too if possible.
+2. Add an AggregatedMetrics struct that stores mean and sample standard deviation across trials for the important metrics.
 
-Better implementation:
+At minimum aggregate:
+- average_load
+- min_load
+- max_load
+- max_min_gap
+- stddev_load
+- cv_load
+- normalized_max_load
+- normalized_gap
+- p90_load
+- p95_load
+- total_cost
+- cost_per_ball
+- every cost breakdown field listed above
 
-* Use a local std::unordered_set<int> or vector of sampled positions to sample distinct positions from [0, untracked_bins_.size()-1] until count positions are selected.
-* Since count == k and this path only applies when k < n-s, this is logically O(k) expected time.
-* Charge:
-  total_cost_ += static_cast<double>(count) * cost_weights_["random_draw"];
-* Return the sampled bin indices.
-* Do not scan all n bins.
+Prefer a compact reusable representation if it keeps the code simple, for example:
 
-Full outside scan:
-If k_ == n_ - s_:
+struct MetricSummary {
+    double mean;
+    double stddev;
+};
 
-* Iterating over all untracked_bins_ is correct and intentional.
-* Do not charge random_draw.
-* For each bin in untracked_bins_:
+struct AggregatedMetrics {
+    MetricSummary max_load;
+    MetricSummary normalized_max_load;
+    ...
+};
 
-  * read its load using readBinLoad(bin)
-  * compare to find the minimum
-    This models checking all untracked bins.
+3. Add helper functions:
+- TrialMetrics computeTrialMetrics(const std::vector<double>& bins,
+                                   double total_cost,
+                                   int balls,
+                                   const CostBreakdown& cost_breakdown);
 
-Admission update:
-When a candidate is admitted:
+- AggregatedMetrics aggregateMetrics(const std::vector<TrialMetrics>& trials);
 
-* Let evicted_bin be the bin currently in the heaviest heap entry.
-* Replace evicted_bin with candidate_bin in heap_.
-* Update heap_positions_:
+Make percentile calculation deterministic and simple:
+- sort a copy of the bin loads
+- use nearest-rank or ceil-based percentile
+- document the chosen method in a comment
 
-  * heap_positions_[evicted_bin] = -1
-  * heap_positions_[candidate_bin] = heap index where it was inserted
-* Update untracked_bins_ and untracked_positions_ so that:
+4. Refactor SimulationBase to store metrics.
 
-  * candidate_bin is removed from untracked_bins_
-  * evicted_bin is added to untracked_bins_
-    This update must be O(1).
+Currently SimulationBase stores:
+- bins_
+- total_cost_
 
-Implement helper methods if useful:
+Keep these, but add:
+- std::vector<TrialMetrics> trial_metrics_;
+- AggregatedMetrics aggregated_metrics_;
+- CostBreakdown cost_breakdown_;
 
-* void removeFromUntracked(int bin)
-* void addToUntracked(int bin)
-* void updateHeapPositions()
-* void rebuildHeapAndPositions()
+Expose getters:
+- const std::vector<TrialMetrics>& getTrialMetrics() const;
+- const AggregatedMetrics& getAggregatedMetrics() const;
+- const CostBreakdown& getCostBreakdown() const;
 
-For O(1) removeFromUntracked:
+Important:
+- reset() should reset bins_, total_cost_, and cost_breakdown_ for the current trial.
+- run() should:
+  a. clear trial_metrics_
+  b. for each trial:
+     - reset()
+     - seed workload_rng_ as before
+     - runSingleTrial()
+     - compute TrialMetrics from that trial's final bins and costs
+     - push it into trial_metrics_
+     - accumulate bins only for optional averaged final loads / debugging
+  c. compute aggregated_metrics_ from trial_metrics_
+  d. keep bins_ as averaged final loads only for backward compatibility/debugging
+  e. keep total_cost_ as mean total cost across trials for backward compatibility
 
-* Find the index from untracked_positions_[bin].
-* Swap that element with the last element of untracked_bins_.
-* Update untracked_positions_ for the swapped bin.
-* pop_back().
-* Set untracked_positions_[bin] = -1.
+5. Refactor cost accounting.
 
-For addToUntracked:
+Right now total_cost_ is incremented directly in multiple places. Keep total_cost_, but also track cost by category.
 
-* Set untracked_positions_[bin] = untracked_bins_.size().
-* push_back(bin).
+Create:
 
-Heap positions:
-Because reorderHeap() calls std::make_heap(), heap entry positions may change.
-After every reorderHeap(), update heap_positions_ by scanning heap_ once.
-This scan is an implementation detail of maintaining heap positions after reorder.
-Do not charge extra logical cost for updating helper position metadata.
-The logical heap update cost is already charged by:
-heapUpdateLevels() * cost_weights_["heap_update_per_level"]
+struct CostBreakdown {
+    double random_draw = 0.0;
+    double load_read = 0.0;
+    double compare = 0.0;
+    double state_read = 0.0;
+    double state_update = 0.0;
+    double state_memory = 0.0;
+    double heap_update = 0.0;
 
-Cost model:
+    double total() const;
+    double statelessCost() const;
+    double statefulCost() const;
+};
 
-* Do not charge extra costs for maintaining heap_positions_ or untracked_positions_.
-* Do not charge extra memory for untracked_bins_ or positions.
-* Keep charging:
+Add protected helper methods in SimulationBase:
+- void addRandomDrawCost(double units);
+- void addLoadReadCost(double units);
+- void addCompareCost(double units);
+- void addStateReadCost(double units);
+- void addStateUpdateCost(double units);
+- void addStateMemoryCost(double units);
+- void addHeapUpdateCost(double units);
 
-  * random_draw only for random sampling of untracked candidates
-  * load_read for reading actual bin loads
-  * compare for comparisons
-  * state_read for reading heap entries
-  * state_update for modifying tracked heap state
-  * heap_update_per_level for logical O(log s) heap updates
-  * state_memory_per_slot only for s heap entries
+Each helper should multiply units by the matching cost weight, update cost_breakdown_, and update total_cost_.
 
-Correctness requirements:
+Then replace direct `total_cost_ += ...` usage in all simulators with the helper methods.
 
-* Sampling with k < n - s must never scan all n bins.
-* Sampling must never include bins currently in the heap.
-* When k == n - s, scanning all untracked_bins_ is correct.
-* When s == n, untracked_bins_ is empty and all outside sampling/admission logic must be skipped.
-* Keep behavior for weighted balls unchanged.
-* Do not change PowerKSimulator or StatefulRoundRobinSimulator.
-* Keep all code inside namespace balls_bins.
-* Prefer clear helper methods over clever code.
+Examples:
+- drawRandomBins(k): addRandomDrawCost(k)
+- readBinLoad(): addLoadReadCost(1)
+- lessThan(): addCompareCost(1)
+- StatefulRoundRobinSimulator state read/update/memory should use addStateReadCost/addStateUpdateCost/addStateMemoryCost
+- HeapSizeSPowerOfKSimulator heap update should use addHeapUpdateCost(levels)
+- comparisons inside HeapSizeSPowerOfKSimulator should use addCompareCost(1)
+
+6. Preserve existing behavior.
+
+Do not change the allocation algorithms.
+Do not change tie-breaking behavior.
+Do not remove weighted ball support.
+Do not implement CSV export yet.
+Do not implement plotting yet.
+Do not redesign main.cpp yet, except minimally to compile with the new metrics API.
+
+7. Update printSimulationSummary in main.cpp to use AggregatedMetrics.
+
+For now, print the same general summary, but use aggregated metrics instead of recomputing metrics from sim.getBins().
+
+Print at least:
+- Average load mean
+- Max load mean ± stddev
+- Normalized max load mean ± stddev
+- Max-min gap mean ± stddev
+- CV mean ± stddev
+- P90/P95 load mean
+- Cost per ball mean ± stddev
+- Cost breakdown per ball:
+  - random draw
+  - load read
+  - compare
+  - state read/update/memory
+  - heap update
+
+Keep printing averaged final bin loads optional or remove it from the main output to reduce noise. If you keep it, label it as debug/backward-compatible output.
+
+8. Validation expectations.
+
+After the refactor:
+- `make` should compile cleanly with -std=c++17 -Wall -Wextra -pedantic.
+- Running the program should still execute all existing simulation scenarios.
+- For trials = 1, stddev across trials should be 0.
+- For unweighted balls, average_load should be exactly or very close to m/n.
+- normalized_max_load should be max_load / average_load.
+- normalized_gap should be (max_load - min_load) / average_load.
+- cost_per_ball should be total_cost / m, with 0 when m == 0.
+
+9. Keep code style simple.
+
+Prefer readable C++17 over clever abstractions.
+Use std::vector, std::string, std::unordered_map only where needed.
+Avoid global mutable state.
+Keep all new types inside namespace balls_bins.

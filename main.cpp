@@ -2,91 +2,45 @@
 #include "PowerKSimulator.h"
 #include "StatefulRoundRobinSimulator.h"
 
-#include <algorithm>
-#include <cmath>
 #include <iomanip>
 #include <iostream>
-#include <limits>
 #include <string>
 #include <vector>
 
-double computeAverage(const std::vector<double>& bins) {
-    if (bins.empty()) {
-        return 0.0;
-    }
-
-    double total = 0.0;
-    for (const double load : bins) {
-        total += load;
-    }
-
-    return total / static_cast<double>(bins.size());
-}
-
-double computeMin(const std::vector<double>& bins) {
-    if (bins.empty()) {
-        return 0.0;
-    }
-
-    return *std::min_element(bins.begin(), bins.end());
-}
-
-double computeMax(const std::vector<double>& bins) {
-    if (bins.empty()) {
-        return 0.0;
-    }
-
-    return *std::max_element(bins.begin(), bins.end());
-}
-
-double computeStdDev(const std::vector<double>& bins) {
-    if (bins.empty()) {
-        return 0.0;
-    }
-
-    const double average = computeAverage(bins);
-    double squared_difference_sum = 0.0;
-
-    for (const double load : bins) {
-        const double difference = load - average;
-        squared_difference_sum += difference * difference;
-    }
-
-    return std::sqrt(squared_difference_sum / static_cast<double>(bins.size()));
+void printMetricWithStddev(const std::string& label,
+                           const balls_bins::MetricSummary& summary) {
+    std::cout << label << ": " << summary.mean << " +/- " << summary.stddev << '\n';
 }
 
 void printSimulationSummary(const balls_bins::SimulationBase& sim,
                             const std::string& policy_name) {
-    const std::vector<double>& bins = sim.getBins();
-    const double average = computeAverage(bins);
-    const double min_load = computeMin(bins);
-    const double max_load = computeMax(bins);
-    const double total_cost = sim.getTotalCost();
-    const double cost_per_ball =
-        sim.getM() == 0 ? 0.0 : total_cost / static_cast<double>(sim.getM());
+    const balls_bins::AggregatedMetrics& metrics = sim.getAggregatedMetrics();
+    const double balls = static_cast<double>(sim.getM());
+    const double per_ball_denominator = balls == 0.0 ? 0.0 : balls;
+    const auto per_ball = [per_ball_denominator](const balls_bins::MetricSummary& summary) {
+        return per_ball_denominator == 0.0 ? 0.0 : summary.mean / per_ball_denominator;
+    };
 
     std::cout << "Policy: " << policy_name << '\n';
     std::cout << "Balls: " << sim.getM() << '\n';
     std::cout << "Bins: " << sim.getN() << '\n';
     std::cout << "Trials: " << sim.getTrials() << '\n';
-    std::cout << "Average load: " << average << '\n';
-    std::cout << "Minimum averaged bin load: " << min_load << '\n';
-    std::cout << "Maximum averaged bin load: " << max_load << '\n';
-    std::cout << "Max-min gap over averaged loads: " << max_load - min_load << '\n';
-    std::cout << "Standard deviation: " << computeStdDev(bins) << '\n';
-    std::cout << "Average total logical cost per trial: " << total_cost << '\n';
-    std::cout << "Average cost per ball: " << cost_per_ball << '\n';
-    std::cout << "Averaged final bin loads: ";
-
-    for (std::size_t i = 0; i < bins.size(); ++i) {
-        if (i > 0) {
-            std::cout << ", ";
-        }
-
-        std::cout << bins[i];
-    }
-
-    std::cout << "\n\n";
+    std::cout << "Average load mean: " << metrics.average_load.mean << '\n';
+    printMetricWithStddev("Max load mean", metrics.max_load);
+    printMetricWithStddev("Normalized max load mean", metrics.normalized_max_load);
+    printMetricWithStddev("Max-min gap mean", metrics.max_min_gap);
+    printMetricWithStddev("CV mean", metrics.cv_load);
+    std::cout << "P90 load mean: " << metrics.p90_load.mean << '\n';
+    std::cout << "P95 load mean: " << metrics.p95_load.mean << '\n';
+    printMetricWithStddev("Cost per ball mean", metrics.cost_per_ball);
+    std::cout << "Cost breakdown per ball:\n";
+    std::cout << "  random draw: " << per_ball(metrics.random_draw_cost) << '\n';
+    std::cout << "  load read: " << per_ball(metrics.load_read_cost) << '\n';
+    std::cout << "  compare: " << per_ball(metrics.compare_cost) << '\n';
+    std::cout << "  state read: " << per_ball(metrics.state_read_cost) << '\n';
+    std::cout << "  state update: " << per_ball(metrics.state_update_cost) << '\n';
+    std::cout << "  state memory: " << per_ball(metrics.state_memory_cost) << '\n';
+    std::cout << "  heap update: " << per_ball(metrics.heap_update_cost) << "\n\n";
 }
 
 void printWorkloadPreviewCheck() {

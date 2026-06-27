@@ -55,12 +55,12 @@ void HeapSizeSPowerOfKSimulator::runSingleTrial() {
             maybeAdmitUntrackedBin();
         }
 
-        total_cost_ += cost_weights_["state_read"];
+        addStateReadCost(1.0);
         const int min_bin = heap_.front().bin_index;
         addBallToBin(min_bin, ball_weight);
 
         heap_.front().load += ball_weight;
-        total_cost_ += cost_weights_["state_update"];
+        addStateUpdateCost(1.0);
         reorderHeap();
     }
 }
@@ -84,7 +84,7 @@ void HeapSizeSPowerOfKSimulator::initializeTrialState() {
 
     std::make_heap(heap_.begin(), heap_.end(), heapEntryIsWorse);
     updateHeapPositions();
-    total_cost_ += static_cast<double>(s_) * cost_weights_["state_memory_per_slot"];
+    addStateMemoryCost(static_cast<double>(s_));
 }
 
 void HeapSizeSPowerOfKSimulator::maybeAdmitUntrackedBin() {
@@ -112,7 +112,7 @@ void HeapSizeSPowerOfKSimulator::maybeAdmitUntrackedBin() {
     const int worst_index = findHeaviestTrackedEntryIndex();
     const HeapEntry& worst_entry = heap_[static_cast<std::size_t>(worst_index)];
 
-    total_cost_ += cost_weights_["compare"];
+    addCompareCost(1.0);
     const bool should_admit = best_load <= worst_entry.load;
 
     if (!should_admit) {
@@ -128,7 +128,7 @@ void HeapSizeSPowerOfKSimulator::maybeAdmitUntrackedBin() {
     heap_positions_[static_cast<std::size_t>(best_bin)] = worst_index;
     heap_[static_cast<std::size_t>(worst_index)] = {best_load, best_bin};
 
-    total_cost_ += cost_weights_["state_update"];
+    addStateUpdateCost(1.0);
     reorderHeap();
 }
 
@@ -146,7 +146,7 @@ std::vector<int> HeapSizeSPowerOfKSimulator::sampleUntrackedBins(int count) {
         }
     }
 
-    total_cost_ += static_cast<double>(count) * cost_weights_["random_draw"];
+    addRandomDrawCost(static_cast<double>(count));
     return sampled_bins;
 }
 
@@ -154,7 +154,7 @@ bool HeapSizeSPowerOfKSimulator::isBetterMinCandidate(double candidate_load,
                                                       int candidate_bin,
                                                       double best_load,
                                                       int best_bin) {
-    total_cost_ += cost_weights_["compare"];
+    addCompareCost(1.0);
 
     if (candidate_load != best_load) {
         return candidate_load < best_load;
@@ -165,7 +165,7 @@ bool HeapSizeSPowerOfKSimulator::isBetterMinCandidate(double candidate_load,
 
 bool HeapSizeSPowerOfKSimulator::isWorseTrackedEntry(const HeapEntry& candidate,
                                                      const HeapEntry& worst) {
-    total_cost_ += cost_weights_["compare"];
+    addCompareCost(1.0);
 
     if (candidate.load != worst.load) {
         return candidate.load > worst.load;
@@ -178,7 +178,7 @@ int HeapSizeSPowerOfKSimulator::findHeaviestTrackedEntryIndex() {
     int worst_index = 0;
 
     for (std::size_t i = 0; i < heap_.size(); ++i) {
-        total_cost_ += cost_weights_["state_read"];
+        addStateReadCost(1.0);
 
         if (i == 0) {
             continue;
@@ -220,8 +220,7 @@ void HeapSizeSPowerOfKSimulator::updateHeapPositions() {
 void HeapSizeSPowerOfKSimulator::reorderHeap() {
     std::make_heap(heap_.begin(), heap_.end(), heapEntryIsWorse);
     updateHeapPositions();
-    total_cost_ += static_cast<double>(heapUpdateLevels()) *
-                   cost_weights_["heap_update_per_level"];
+    addHeapUpdateCost(static_cast<double>(heapUpdateLevels()));
 }
 
 int HeapSizeSPowerOfKSimulator::heapUpdateLevels() const {

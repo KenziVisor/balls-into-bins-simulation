@@ -1,6 +1,8 @@
 #ifndef BALLS_BINS_SIMULATION_BASE_H
 #define BALLS_BINS_SIMULATION_BASE_H
 
+#include "SimulationMetrics.h"
+
 #include <random>
 #include <string>
 #include <unordered_map>
@@ -26,6 +28,9 @@ public:
     unsigned int getWorkloadSeed() const;
     const std::vector<double>& getBins() const;
     double getTotalCost() const;
+    const std::vector<TrialMetrics>& getTrialMetrics() const;
+    const AggregatedMetrics& getAggregatedMetrics() const;
+    const CostBreakdown& getCostBreakdown() const;
     double getCostWeight(const std::string& key) const;
     std::vector<double> previewBallWeights(int count, int trial_index = 0) const;
     void setCostWeight(const std::string& key, double value);
@@ -42,6 +47,13 @@ protected:
     bool lessThan(double a, double b);
     void addBallToBin(int bin_index, double weight);
     void validateBinIndex(int bin_index) const;
+    void addRandomDrawCost(double units);
+    void addLoadReadCost(double units);
+    void addCompareCost(double units);
+    void addStateReadCost(double units);
+    void addStateUpdateCost(double units);
+    void addStateMemoryCost(double units);
+    void addHeapUpdateCost(double units);
 
     int m_;
     int n_;
@@ -50,6 +62,9 @@ protected:
     double max_weight_;
     unsigned int workload_seed_;
     std::vector<double> bins_;
+    std::vector<TrialMetrics> trial_metrics_;
+    AggregatedMetrics aggregated_metrics_;
+    CostBreakdown cost_breakdown_;
     std::unordered_map<std::string, double> cost_weights_;
     double total_cost_;
     std::mt19937 rng_;

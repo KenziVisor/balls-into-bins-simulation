@@ -18,16 +18,16 @@ int StatefulRoundRobinSimulator::getCurrentBin() const {
 
 void StatefulRoundRobinSimulator::runSingleTrial() {
     current_bin_ = 0;
-    total_cost_ += cost_weights_["state_memory_per_slot"];
+    addStateMemoryCost(1.0);
 
     for (int ball = 0; ball < m_; ++ball) {
         const double ball_weight = drawBallWeight();
 
-        total_cost_ += cost_weights_["state_read"];
+        addStateReadCost(1.0);
         addBallToBin(current_bin_, ball_weight);
 
         current_bin_ = (current_bin_ + 1) % n_;
-        total_cost_ += cost_weights_["state_update"];
+        addStateUpdateCost(1.0);
     }
 }
 
