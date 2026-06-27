@@ -1,8 +1,8 @@
 #ifndef BALLS_BINS_EXPERIMENT_RUNNER_H
 #define BALLS_BINS_EXPERIMENT_RUNNER_H
 
-#include "SimulationMetrics.h"
-#include "SimulationReferences.h"
+#include "balls_bins/SimulationMetrics.h"
+#include "balls_bins/SimulationReferences.h"
 
 #include <string>
 #include <vector>

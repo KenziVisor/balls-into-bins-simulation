@@ -1,7 +1,7 @@
 #ifndef BALLS_BINS_SIMULATION_BASE_H
 #define BALLS_BINS_SIMULATION_BASE_H
 
-#include "SimulationMetrics.h"
+#include "balls_bins/SimulationMetrics.h"
 
 #include <random>
 #include <string>

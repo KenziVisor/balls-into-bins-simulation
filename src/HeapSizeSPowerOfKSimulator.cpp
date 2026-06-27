@@ -1,4 +1,4 @@
-#include "HeapSizeSPowerOfKSimulator.h"
+#include "balls_bins/HeapSizeSPowerOfKSimulator.h"
 
 #include <algorithm>
 #include <cmath>

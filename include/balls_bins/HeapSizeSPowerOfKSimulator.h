@@ -1,7 +1,7 @@
 #ifndef BALLS_BINS_HEAP_SIZE_S_POWER_OF_K_SIMULATOR_H
 #define BALLS_BINS_HEAP_SIZE_S_POWER_OF_K_SIMULATOR_H
 
-#include "SimulationBase.h"
+#include "balls_bins/SimulationBase.h"
 
 #include <vector>
 

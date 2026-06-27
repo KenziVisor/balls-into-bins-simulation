@@ -1,9 +1,9 @@
-#include "ExperimentRunner.h"
+#include "balls_bins/ExperimentRunner.h"
 
-#include "CsvWriter.h"
-#include "HeapSizeSPowerOfKSimulator.h"
-#include "PowerKSimulator.h"
-#include "StatefulRoundRobinSimulator.h"
+#include "balls_bins/CsvWriter.h"
+#include "balls_bins/HeapSizeSPowerOfKSimulator.h"
+#include "balls_bins/PowerKSimulator.h"
+#include "balls_bins/StatefulRoundRobinSimulator.h"
 
 #include <iomanip>
 #include <iostream>

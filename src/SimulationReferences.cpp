@@ -1,4 +1,4 @@
-#include "SimulationReferences.h"
+#include "balls_bins/SimulationReferences.h"
 
 #include <cmath>
 #include <stdexcept>

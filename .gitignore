@@ -1,4 +1,5 @@
 # Build outputs
+build/
 *.o
 *.obj
 *.exe
@@ -11,8 +12,11 @@
 balls_sim
 balls_bins_sim
 
+# Generated experiment outputs
+results/
+plots/
+
 # Build directories
-build/
 cmake-build-*/
 
 # CMake generated files
@@ -20,7 +24,13 @@ CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
 
-# Editor and OS files
+# Python cache / environments
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS/editor noise
 .vscode/
 .idea/
 .DS_Store

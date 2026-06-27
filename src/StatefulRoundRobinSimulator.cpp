@@ -1,4 +1,4 @@
-#include "StatefulRoundRobinSimulator.h"
+#include "balls_bins/StatefulRoundRobinSimulator.h"
 
 namespace balls_bins {
 

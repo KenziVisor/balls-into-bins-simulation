@@ -1,4 +1,4 @@
-#include "ExperimentRunner.h"
+#include "balls_bins/ExperimentRunner.h"
 
 #include <filesystem>
 #include <iostream>

@@ -1,4 +1,4 @@
-#include "SimulationBase.h"
+#include "balls_bins/SimulationBase.h"
 
 #include <algorithm>
 #include <numeric>

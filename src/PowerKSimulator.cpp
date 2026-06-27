@@ -1,4 +1,4 @@
-#include "PowerKSimulator.h"
+#include "balls_bins/PowerKSimulator.h"
 
 #include <stdexcept>
 #include <vector>
