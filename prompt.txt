@@ -1,197 +1,181 @@
-Refactor the simulation framework to support multiple trials controlled by the abstract base class.
+We need to fix the weighted-balls workload generation in the existing C++ balls-into-bins simulation.
 
-Before coding, read all existing files:
-- SimulationBase.h
-- SimulationBase.cpp
-- RandomSimulator.h
-- RandomSimulator.cpp
-- PowerKSimulator.h
-- PowerKSimulator.cpp
-- main.cpp
+Current structure:
+
+* SimulationBase is the abstract base class.
+* PowerKSimulator inherits from SimulationBase.
+* StatefulRoundRobinSimulator inherits from SimulationBase.
+* The project uses namespace balls_bins.
+* Do not use `using namespace std;`.
+* Keep the code simple and interview-readable.
+
+Problem:
+Weighted balls currently introduce experimental noise if every simulator generates its own unrelated sequence of weights.
 
 Goal:
-Add a `trials` feature to SimulationBase so that every simulator can run the same policy multiple times and report averaged results.
+All simulator policies should run on the same ball-weight sequence when they use the same:
 
-Important design:
-Use the Template Method pattern.
+* m
+* weighted_balls flag
+* max_weight
+* workload_seed
+* trial index
 
-Currently:
-- SimulationBase has `virtual void run() = 0`.
-- Derived classes override `run()` directly.
+This should be done without storing all ball weights in a vector as part of the simulator state.
 
-Refactor to:
-- SimulationBase owns the public `run()` method.
-- Derived classes no longer override `run()`.
-- Derived classes instead override a protected pure virtual method:
+Design:
+Separate the randomness used for workload generation from the randomness used by placement policies.
 
-    virtual void runSingleTrial() = 0;
+In SimulationBase:
 
-SimulationBase::run() should:
-1. Validate that trials_ > 0.
-2. Run the simulation policy trials_ times.
-3. For each trial:
-   - reset bins_ to all zeros
-   - reset total_cost_ to 0
-   - call runSingleTrial()
-   - accumulate final bin loads
-   - accumulate total logical cost
-4. After all trials:
-   - replace bins_ with the average final bin loads across trials
-   - replace total_cost_ with the average total logical cost across trials
+* Keep the existing RNG for policy randomness, or rename it to policy_rng_ if convenient.
+* Add a separate RNG for workload generation:
+  std::mt19937 workload_rng_;
+* Add a workload seed:
+  unsigned int workload_seed_;
 
-Required API changes in SimulationBase:
-Constructor:
-- Change constructor from:
+Update the SimulationBase constructor signature to include a workload seed:
 
-    SimulationBase(int m, int n);
+SimulationBase(
+int m,
+int n,
+int trials = 1,
+bool weighted_balls = false,
+double max_weight = 1.0,
+unsigned int workload_seed = 42
+);
 
-  to:
+If the existing constructor already includes weighted_balls and max_weight, only add workload_seed after them.
 
-    SimulationBase(int m, int n, int trials = 1);
+Validation:
 
-Member variables:
-- Add:
+* max_weight_ must be >= 1.0.
+* workload_seed_ should be stored as provided.
 
-    int trials_;
-
-Public methods:
-- Add:
-
-    int getTrials() const;
-
-- Keep:
-
-    int getM() const;
-    int getN() const;
-    const std::vector<double>& getBins() const;
-    double getTotalCost() const;
-    double getCostWeight(const std::string& key) const;
-    void setCostWeight(const std::string& key, double value);
-    void reset();
-
-- Change:
-
-    virtual void run() = 0;
-
-  to:
-
-    void run();
-
-Protected methods:
-- Add:
-
-    virtual void runSingleTrial() = 0;
-
-- Keep the existing protected helper methods:
-    std::vector<int> drawRandomBins(int k);
-    double readBinLoad(int bin_index);
-    bool lessThan(double a, double b);
-    void addBallToBin(int bin_index);
-    void validateBinIndex(int bin_index) const;
-
-Constructor validation:
-- m must be non-negative.
-- n must be positive.
-- trials must be positive.
-- Throw std::invalid_argument if invalid.
+Add a public getter:
+unsigned int getWorkloadSeed() const;
 
 Important behavior:
-- reset() should reset bins_ to zeros and total_cost_ to 0.
-- SimulationBase::run() may call reset() internally before each single trial.
-- After SimulationBase::run() finishes, bins_ and total_cost_ should represent averaged results across trials.
-- Do not average m_, n_, trials_, or cost_weights_.
+At the beginning of every trial, before runSingleTrial() is called, reset the workload RNG to a deterministic trial-specific seed:
 
-Update RandomSimulator:
-- Constructor should become:
+workload_rng_.seed(workload_seed_ + static_cast<unsigned int>(trial));
 
-    RandomSimulator(int m, int n, int trials = 1);
+This ensures that:
 
-- It should call:
+* Trial 0 always gets the same workload sequence for the same workload_seed.
+* Trial 1 gets a different but deterministic workload sequence.
+* Different policies get identical ball weights for the same trial when configured with the same workload_seed.
 
-    SimulationBase(m, n, trials)
+drawBallWeight():
 
-- Replace its `void run() override` with:
+* Must use workload_rng_, not the policy RNG.
+* If weighted_balls_ is false, return 1.0.
+* If weighted_balls_ is true, draw from std::uniform_real_distribution<double>(1.0, max_weight_).
+* drawBallWeight() must never modify total_cost_.
+* Do not add a weight_draw cost key.
+* Do not reuse random_draw cost for ball weights.
 
-    void runSingleTrial() override
+Policy randomness:
 
-- runSingleTrial() behavior:
-    for each ball:
-        candidates = drawRandomBins(1)
-        addBallToBin(candidates[0])
+* drawRandomBins() must continue to use the policy RNG, not workload_rng_.
+* random_draw cost should still apply only to random bin selection.
 
-Update PowerKSimulator:
-- Constructor should become:
+Update derived constructors:
+PowerKSimulator constructor should accept and forward workload_seed:
 
-    PowerKSimulator(int m, int n, int k, int trials = 1);
+PowerKSimulator(
+int m,
+int n,
+int k,
+int trials = 1,
+bool weighted_balls = false,
+double max_weight = 1.0,
+unsigned int workload_seed = 42
+);
 
-- It should call:
+StatefulRoundRobinSimulator constructor should accept and forward workload_seed:
 
-    SimulationBase(m, n, trials)
+StatefulRoundRobinSimulator(
+int m,
+int n,
+int trials = 1,
+bool weighted_balls = false,
+double max_weight = 1.0,
+unsigned int workload_seed = 42
+);
 
-- Keep private member k_.
-- Keep getK() const.
-- Replace its `void run() override` with:
+Verification support:
+Add a public method to SimulationBase:
 
-    void runSingleTrial() override
+std::vector<double> previewBallWeights(int count, int trial_index = 0) const;
 
-- runSingleTrial() behavior:
-    for each ball:
-        candidates = drawRandomBins(k_)
-        read candidate loads using readBinLoad()
-        compare using lessThan()
-        keep first candidate in ties
-        addBallToBin(best_bin)
+Behavior:
 
-Update main.cpp:
-- Define a trials value near the top of main, for example:
+* It should not modify the simulator’s actual workload_rng_ state.
+* It should create a local std::mt19937 preview_rng seeded with:
+  workload_seed_ + static_cast<unsigned int>(trial_index)
+* If count is negative, throw std::invalid_argument.
+* If weighted_balls_ is false, return count values of 1.0.
+* If weighted_balls_ is true, use preview_rng to generate count weights from [1.0, max_weight_].
+* It must not modify total_cost_.
+* It should be used only for reproducibility/debug verification.
 
-    const int trials = 100;
+main.cpp verification:
+Add an explicit sanity check in main.cpp before running the simulation summaries.
 
-- Pass trials into all simulator constructors.
-- Print trials in the simulation summary by using sim.getTrials().
-- Keep the existing configurations:
-    10000 balls into 16 bins
-    10000 balls into 32 bins
-- Keep the existing policies:
-    Random bin per ball
-    Power of 2 random choices
-    Power of 3 random choices
-    Absolute minimum bin, implemented as PowerKSimulator with k = n if already present
+Implement a helper function in main.cpp, for example:
 
-Summary output:
-Update printSimulationSummary so it includes:
-- policy name
-- number of balls
-- number of bins
-- number of trials
-- average load
-- minimum averaged bin load
-- maximum averaged bin load
-- max-min gap over averaged bin loads
-- standard deviation over averaged bin loads
-- average total logical cost per trial
-- average cost per ball
-- averaged final bin loads
+void printWorkloadPreviewCheck() {
+const int balls = 10000;
+const int bins = 16;
+const int trials = 1;
+const double max_weight = 10.0;
+const unsigned int workload_seed = 42;
+const int preview_count = 10;
 
-Important note:
-For this step, it is acceptable that min, max, and stddev are computed from the averaged final bin-load vector.
-Later we may improve this by storing per-trial metrics and averaging each metric separately.
-Do not implement that extra metrics framework now.
+```
+balls_bins::PowerKSimulator power2(
+    balls, bins, 2, trials, true, max_weight, workload_seed);
 
-Consistency pass:
-After refactoring, scan the entire codebase and make sure:
-- No derived class overrides run().
-- Only SimulationBase implements public run().
-- Every derived class implements runSingleTrial().
-- Constructors compile with the new trials argument.
-- There are no calls to the removed single-bin draw method.
-- All random selection uses drawRandomBins(k).
-- No file uses `using namespace std;`.
-- Standard library types are fully qualified with std::.
-- No simulation manually modifies total_cost_ except inside SimulationBase helper methods.
-- The project compiles cleanly as C++17.
+balls_bins::StatefulRoundRobinSimulator round_robin(
+    balls, bins, trials, true, max_weight, workload_seed);
 
-Build command to test:
-g++ -std=c++17 -Wall -Wextra -pedantic SimulationBase.cpp RandomSimulator.cpp PowerKSimulator.cpp main.cpp -o balls_bins_sim
+const std::vector<double> power_weights =
+    power2.previewBallWeights(preview_count);
 
-Keep the code clean, simple, readable, and interview-friendly.
+const std::vector<double> rr_weights =
+    round_robin.previewBallWeights(preview_count);
+
+const bool match = (power_weights == rr_weights);
+
+std::cout << "Workload preview match: "
+          << (match ? "yes" : "no") << '\n';
+
+std::cout << "First " << preview_count
+          << " workload weights: ";
+
+for (int i = 0; i < preview_count; ++i) {
+    if (i > 0) {
+        std::cout << ", ";
+    }
+    std::cout << power_weights[static_cast<std::size_t>(i)];
+}
+
+std::cout << "\n\n";
+```
+
+}
+
+Then call printWorkloadPreviewCheck() near the beginning of main(), before the simulation runs.
+
+Important:
+
+* This check should compare a weighted PowerKSimulator and a weighted StatefulRoundRobinSimulator configured with the same max_weight and workload_seed.
+* It should print "Workload preview match: yes" when the implementation is correct.
+* This verification is intentionally lightweight and may remain in main.cpp for now.
+* Do not store all 10000 weights in the simulator.
+* Do not change the meaning of total_cost_.
+* Do not charge cost for previewing or drawing weights.
+* Do not change the unweighted behavior.
+* Keep all code inside namespace balls_bins.
+* Update headers, cpp files, and Makefile if needed.

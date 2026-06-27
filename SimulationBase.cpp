@@ -7,18 +7,30 @@
 
 namespace balls_bins {
 
-SimulationBase::SimulationBase(int m, int n, int trials)
+SimulationBase::SimulationBase(int m,
+                               int n,
+                               int trials,
+                               bool weighted_balls,
+                               double max_weight,
+                               unsigned int workload_seed)
     : m_(m),
       n_(n),
       trials_(trials),
+      weighted_balls_(weighted_balls),
+      max_weight_(max_weight),
+      workload_seed_(workload_seed),
       bins_(),
       cost_weights_{
           {"random_draw", 1.0},
           {"load_read", 5.0},
           {"compare", 1.0},
+          {"state_read", 1.0},
+          {"state_update", 1.0},
+          {"state_memory_per_slot", 1.0},
       },
       total_cost_(0.0),
-      rng_(std::random_device{}()) {
+      rng_(std::random_device{}()),
+      workload_rng_(workload_seed_) {
     if (m_ < 0) {
         throw std::invalid_argument("Number of balls must be non-negative.");
     }
@@ -29,6 +41,10 @@ SimulationBase::SimulationBase(int m, int n, int trials)
 
     if (trials_ <= 0) {
         throw std::invalid_argument("Number of trials must be positive.");
+    }
+
+    if (max_weight_ < 1.0) {
+        throw std::invalid_argument("Maximum ball weight must be at least 1.0.");
     }
 
     bins_.assign(static_cast<std::size_t>(n_), 0.0);
@@ -46,6 +62,18 @@ int SimulationBase::getTrials() const {
     return trials_;
 }
 
+bool SimulationBase::isWeightedBalls() const {
+    return weighted_balls_;
+}
+
+double SimulationBase::getMaxWeight() const {
+    return max_weight_;
+}
+
+unsigned int SimulationBase::getWorkloadSeed() const {
+    return workload_seed_;
+}
+
 const std::vector<double>& SimulationBase::getBins() const {
     return bins_;
 }
@@ -61,6 +89,27 @@ double SimulationBase::getCostWeight(const std::string& key) const {
     }
 
     return it->second;
+}
+
+std::vector<double> SimulationBase::previewBallWeights(int count, int trial_index) const {
+    if (count < 0) {
+        throw std::invalid_argument("Preview weight count must be non-negative.");
+    }
+
+    std::vector<double> weights(static_cast<std::size_t>(count), 1.0);
+
+    if (!weighted_balls_) {
+        return weights;
+    }
+
+    std::mt19937 preview_rng(workload_seed_ + static_cast<unsigned int>(trial_index));
+    std::uniform_real_distribution<double> distribution(1.0, max_weight_);
+
+    for (double& weight : weights) {
+        weight = distribution(preview_rng);
+    }
+
+    return weights;
 }
 
 void SimulationBase::setCostWeight(const std::string& key, double value) {
@@ -82,6 +131,7 @@ void SimulationBase::run() {
 
     for (int trial = 0; trial < trials_; ++trial) {
         reset();
+        workload_rng_.seed(workload_seed_ + static_cast<unsigned int>(trial));
         runSingleTrial();
 
         for (int bin = 0; bin < n_; ++bin) {
@@ -126,6 +176,15 @@ std::vector<int> SimulationBase::drawRandomBins(int k) {
     return candidates;
 }
 
+double SimulationBase::drawBallWeight() {
+    if (!weighted_balls_) {
+        return 1.0;
+    }
+
+    std::uniform_real_distribution<double> distribution(1.0, max_weight_);
+    return distribution(workload_rng_);
+}
+
 double SimulationBase::readBinLoad(int bin_index) {
     validateBinIndex(bin_index);
     total_cost_ += cost_weights_["load_read"];
@@ -138,9 +197,9 @@ bool SimulationBase::lessThan(double a, double b) {
     return a < b;
 }
 
-void SimulationBase::addBallToBin(int bin_index) {
+void SimulationBase::addBallToBin(int bin_index, double weight) {
     validateBinIndex(bin_index);
-    bins_[static_cast<std::size_t>(bin_index)] += 1.0;
+    bins_[static_cast<std::size_t>(bin_index)] += weight;
 }
 
 void SimulationBase::validateBinIndex(int bin_index) const {

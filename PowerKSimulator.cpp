@@ -5,8 +5,14 @@
 
 namespace balls_bins {
 
-PowerKSimulator::PowerKSimulator(int m, int n, int k, int trials)
-    : SimulationBase(m, n, trials),
+PowerKSimulator::PowerKSimulator(int m,
+                                 int n,
+                                 int k,
+                                 int trials,
+                                 bool weighted_balls,
+                                 double max_weight,
+                                 unsigned int workload_seed)
+    : SimulationBase(m, n, trials, weighted_balls, max_weight, workload_seed),
       k_(k) {
     if (k_ <= 0) {
         throw std::invalid_argument("PowerKSimulator requires k to be positive.");
@@ -23,10 +29,11 @@ int PowerKSimulator::getK() const {
 
 void PowerKSimulator::runSingleTrial() {
     for (int ball = 0; ball < m_; ++ball) {
+        const double ball_weight = drawBallWeight();
         const std::vector<int> candidates = drawRandomBins(k_);
 
         if (k_ == 1) {
-            addBallToBin(candidates[0]);
+            addBallToBin(candidates[0], ball_weight);
             continue;
         }
 
@@ -43,7 +50,7 @@ void PowerKSimulator::runSingleTrial() {
             }
         }
 
-        addBallToBin(best_bin);
+        addBallToBin(best_bin, ball_weight);
     }
 }
 
