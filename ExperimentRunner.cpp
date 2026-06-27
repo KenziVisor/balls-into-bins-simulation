@@ -6,6 +6,7 @@
 #include "StatefulRoundRobinSimulator.h"
 
 #include <iomanip>
+#include <iostream>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -187,6 +188,33 @@ std::string referenceNote(bool weighted_balls) {
     return "Optimal unweighted allocation";
 }
 
+void printScenarioStart(const Scenario& scenario,
+                        std::size_t scenario_index,
+                        std::size_t scenario_count) {
+    std::cout << '[' << scenario_index << '/' << scenario_count << "] "
+              << scenario.experiment_id << " | " << scenario.policy_name
+              << " | n=" << scenario.bins << " | "
+              << (scenario.weighted_balls ? "weighted" : "unweighted");
+
+    if (scenario.k > 0 || scenario.simulator_name == "PowerKSimulator" ||
+        scenario.simulator_name == "HeapSizeSPowerOfKSimulator") {
+        std::cout << " | k=" << scenario.k;
+    }
+
+    if (scenario.heap_size > 0) {
+        std::cout << " | heap_size=" << scenario.heap_size;
+    }
+
+    std::cout << '\n';
+}
+
+void printScenarioDone(const AggregatedMetrics& metrics) {
+    std::cout << "      done: max_load=" << std::fixed << std::setprecision(2)
+              << metrics.max_load.mean << ", cv=" << std::setprecision(4)
+              << metrics.cv_load.mean << ", cost/ball=" << std::setprecision(2)
+              << metrics.cost_per_ball.mean << std::defaultfloat << '\n';
+}
+
 }  // namespace
 
 std::vector<Scenario> buildDefaultScenarios() {
@@ -339,11 +367,16 @@ std::vector<ScenarioResult> runScenarios(const std::vector<Scenario>& scenarios)
     std::vector<ScenarioResult> results;
     results.reserve(scenarios.size());
 
-    for (const Scenario& scenario : scenarios) {
+    for (std::size_t index = 0; index < scenarios.size(); ++index) {
+        const Scenario& scenario = scenarios[index];
+        printScenarioStart(scenario, index + 1, scenarios.size());
+
         std::unique_ptr<SimulationBase> simulator = createSimulator(scenario);
         simulator->run();
 
         const AggregatedMetrics metrics = simulator->getAggregatedMetrics();
+        printScenarioDone(metrics);
+
         const ReferenceMetrics reference = computeReferenceMetrics(
             scenario.balls,
             scenario.bins,

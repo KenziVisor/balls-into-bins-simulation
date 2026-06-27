@@ -1,90 +1,38 @@
-We are now implementing CSV export and plotting for the balls-into-bins simulation project.
+We are implementing CSV export and plotting for the balls-into-bins simulation project.
 
 Do NOT change the core simulation algorithms.
-Do NOT change the metric computation logic unless absolutely required.
+Do NOT change metric computation unless absolutely required.
 Keep using namespace balls_bins in C++.
 Do not add `using namespace std;`.
 
 Current project state:
 - SimulationBase computes per-trial metrics and aggregated metrics.
 - SimulationMetrics contains max_load, cv_load, cost_per_ball, and cost breakdown fields.
-- SimulationReferences contains:
-  - ReferenceType
-  - ReferenceMetrics
-  - computeReferenceMetrics(...)
-  - referenceTypeToString(...)
-- Allocation RNG and weighted workload RNG are now deterministic using seeds.
+- SimulationReferences contains reference helpers:
+  - unweighted optimal max load
+  - unweighted optimal CV
+  - weighted average-load lower bound
+- Allocation RNG and weighted workload RNG are deterministic.
 
 Goal:
-Create a clean experiment runner + CSV exporter + plotting script that generates the final graph set.
+Create:
+1. A C++ experiment runner that exports one CSV.
+2. A Python plotting script that reads the CSV and generates the final plots.
 
-Preferred design:
-- Keep C++ responsible for running simulations and exporting CSV data.
-- Use Python with matplotlib for plotting.
-- Do not use seaborn.
-- Do not generate plots directly in C++.
+Use C++ for simulation + CSV export.
+Use Python + matplotlib for plotting.
+Do NOT use seaborn.
 
-Output folders:
-- Create `results/`
-- Create `plots/`
+Folders:
+- results/
+- plots/
 
-C++ work:
-1. Create a new experiment/CSV export layer.
+CSV output:
+- results/simulation_results.csv
 
-Recommended files:
-- ExperimentRunner.h
-- ExperimentRunner.cpp
-- CsvWriter.h
-- CsvWriter.cpp
+Each CSV row is one scenario result.
 
-You may choose a simpler structure if it remains clean and readable.
-
-2. Add a Scenario struct.
-
-It should contain enough metadata for every simulation row:
-
-- std::string experiment_id;
-- std::string experiment_title;
-- std::string policy_name;
-- std::string policy_family; 
-  Values should be:
-  - "stateless"
-  - "round_robin"
-  - "heap"
-- std::string simulator_name;
-- int balls;
-- int bins;
-- int trials;
-- bool weighted_balls;
-- double max_weight;
-- unsigned int workload_seed;
-- unsigned int allocation_seed;
-- int k;              // use 0 or empty-equivalent when not relevant
-- int heap_size;      // use 0 or empty-equivalent when not relevant
-
-3. Run all scenarios needed for the final graph list.
-
-Global constants:
-- balls = 10000
-- bins values: 16 and 32
-- trials: use 30 by default unless runtime is too slow. If slow, use 10.
-- weighted max weight = 10.0
-- workload_seed = 42
-- allocation_seed = 1337
-
-Important:
-- All comparable weighted scenarios must use the same workload_seed.
-- All random/stateless comparable scenarios must use deterministic allocation_seed.
-
-4. CSV output
-
-Export one main CSV:
-
-    results/simulation_results.csv
-
-Each row should be one scenario result.
-
-Columns:
+Required CSV columns:
 - experiment_id
 - experiment_title
 - policy_name
@@ -100,7 +48,7 @@ Columns:
 - k
 - heap_size
 
-Metrics:
+Metric columns:
 - average_load_mean
 - average_load_stddev
 - max_load_mean
@@ -129,7 +77,7 @@ Reference columns:
 - reference_cv_load
 - reference_note
 
-Use computeReferenceMetrics(...):
+Reference behavior:
 - For unweighted:
   reference_type = "unweighted_optimal"
   reference_max_load = ceil(m/n)
@@ -142,72 +90,82 @@ Use computeReferenceMetrics(...):
   reference_cv_load = 0.0
   reference_note = "Average-load lower bound only; true weighted optimum requires partition/bin-packing"
 
-5. Experiment definitions
+Global constants:
+- balls = 10000
+- bins values: 16 and 32
+- trials = 30 by default. If runtime is too slow, use 10.
+- weighted max weight = 10.0
+- workload_seed = 42
+- allocation_seed = 1337
 
-Create scenarios for the following experiments.
+Experiments to run:
 
-Experiment 1: Stateless baseline
+Experiment 1:
 experiment_id = "01_stateless_baseline"
 Workload: unweighted
-Policies for both n=16 and n=32:
+Policies for n=16 and n=32:
 - Random: PowerKSimulator k=1, family "stateless"
 - Power-2: PowerKSimulator k=2, family "stateless"
 - Power-3: PowerKSimulator k=3, family "stateless"
 - Absolute minimum: PowerKSimulator k=n, family "stateless"
 
-Experiment 2: Diminishing returns of k
+Experiment 2:
 experiment_id = "02_diminishing_returns"
 Workload: unweighted
-For n=16, k values:
-- 1, 2, 3, 4, 8, 16
-For n=32, k values:
-- 1, 2, 3, 4, 8, 16, 32
 Use PowerKSimulator only.
+For n=16, k values: 1, 2, 3, 4, 8, 16
+For n=32, k values: 1, 2, 3, 4, 8, 16, 32
 family = "stateless"
 
-Experiment 3: Stateful vs stateless under equal weights
+Experiment 3:
 experiment_id = "03_stateful_vs_stateless_unweighted"
 Workload: unweighted
-Policies for both n=16 and n=32:
+Policies for n=16 and n=32:
 - Random: PowerKSimulator k=1
 - Power-2: PowerKSimulator k=2
 - Power-3: PowerKSimulator k=3
 - Round-robin: StatefulRoundRobinSimulator
 - Absolute minimum: PowerKSimulator k=n
-Do NOT include heap in this experiment.
+Do NOT include heap.
 
-Experiment 4: Weighted balls break round-robin
+Experiment 4:
 experiment_id = "04_weighted_round_robin_break"
 Workload: weighted, max_weight=10
-Policies for both n=16 and n=32:
+Policies for n=16 and n=32:
 - Random weighted: PowerKSimulator k=1
 - Power-2 weighted: PowerKSimulator k=2
 - Power-3 weighted: PowerKSimulator k=3
 - Round-robin weighted: StatefulRoundRobinSimulator
 - Absolute minimum weighted: PowerKSimulator k=n
-Do NOT include heap in this experiment.
+Do NOT include heap.
 
-Experiment 5: Heap size sweep
+Experiment 5:
 experiment_id = "05_heap_sweep"
 Workload: weighted, max_weight=10
 Use HeapSizeSPowerOfKSimulator only.
+
 Important:
 - For partial heap, fix k=2.
-- Do not sweep k.
-- k=2 is the conclusion from the earlier power-of-k experiments.
+- Do NOT sweep k.
+- k=2 is the conclusion from previous power-of-k experiments.
+- This experiment tests heap/state size only.
+
 For n=16, heap sizes:
 - s=2,4,8,16
+
 For n=32, heap sizes:
 - s=2,4,8,16,32
+
 For s<n:
 - use k=2
+
 For s==n:
 - full heap, use k=0
 
-Experiment 6: Final tradeoff unweighted
+Experiment 6:
 experiment_id = "06_final_tradeoff_unweighted"
 Workload: unweighted
-Policies for both n=16 and n=32:
+Policies for n=16 and n=32:
 - Random: PowerKSimulator k=1, family stateless
 - Power-2: PowerKSimulator k=2, family stateless
 - Power-3: PowerKSimulator k=3, family stateless
@@ -219,185 +177,233 @@ Policies for both n=16 and n=32:
 - Partial heap s=16 k=2: HeapSizeSPowerOfKSimulator, family heap
 - Full heap: HeapSizeSPowerOfKSimulator s=n k=0, family heap
 
-Important:
-- If heap size s is larger than n, skip that scenario.
-  Example: for n=16, s=16 is valid and is also full-size state. Avoid duplicating identical labels if needed.
+If heap size s is larger than n, skip it.
+Avoid duplicate heap rows when s=n is already represented as Full heap.
 
-Experiment 7: Final tradeoff weighted
+Experiment 7:
 experiment_id = "07_final_tradeoff_weighted"
 Workload: weighted, max_weight=10
 Same policy list as Experiment 6.
 For partial heap, always use k=2.
 For full heap, use s=n, k=0.
 
-6. Update main.cpp
-
-Replace the current manually listed simulation runs with:
-- run all experiment scenarios
-- export results/simulation_results.csv
-- print a short summary:
-  - number of scenarios run
-  - output CSV path
+Update main.cpp:
+- Replace manually listed simulations with running all scenarios.
+- Export results/simulation_results.csv.
+- Print only a short summary:
+  - number of scenarios
+  - CSV path
   - trials
-  - seeds
+  - workload seed
+  - allocation seed
 
-Do not print huge per-policy summaries by default anymore.
+Do not print huge per-policy summaries by default.
 
-7. Python plotting script
-
+Python plotting:
 Create:
-
-    plot_results.py
+- plot_results.py
 
 It should read:
+- results/simulation_results.csv
 
-    results/simulation_results.csv
-
-and generate PNG files under:
-
-    plots/
+and write PNG files to:
+- plots/
 
 Use:
 - pandas
 - matplotlib
 - no seaborn
 
-If pandas is not available, it is acceptable to implement simple CSV loading, but pandas is preferred.
+General plot rules:
+- Use readable fonts.
+- Use clear titles, subtitles when useful, axis labels, and legends.
+- Save as PNG with dpi=200.
+- Use tight_layout or constrained_layout.
+- Rotate categorical x labels when needed.
+- Every line should differ by both color and marker.
+- Use cost_per_ball_mean only for cost plots.
+- Do not plot total_cost.
+- Do not annotate every point in scatter plots.
+- Avoid clutter.
 
-General plotting rules:
-- Every line must be separated by both color and marker.
-- Use clear titles, axis labels, legends, and readable tick labels.
-- Save at high resolution, e.g. dpi=200.
-- Use tight_layout.
-- Do not use tiny fonts.
-- Rotate categorical x-axis labels when needed.
-- Include error bars when stddev is meaningful and does not clutter the chart.
-- Prefer one figure per PNG.
-
-For experiments 1-5:
-Each metric graph should have two vertical panels sharing the same x-axis:
+For experiments 1-4:
+Each output file should contain two vertical panels:
 - Top panel: quality metric, either max_load or cv_load
-- Bottom panel: cost_per_ball
+- Bottom panel: cost_per_ball_mean
+Both panels share the same x-axis.
 
-For experiments 6-7:
-Each graph is a scatter plot:
-- X-axis: cost_per_ball_mean
-- Y-axis: max_load_mean or cv_load_mean
-- color: policy_family
-- marker: bins, one marker for n=16 and another for n=32
-- annotate points with short policy labels if readable; otherwise use legend only.
+Experiment 1 plot files:
+1. plots/01_stateless_baseline_max_load.png
+   - x-axis: policy
+   - top: max_load_mean
+   - bottom: cost_per_ball_mean
+   - separate lines for n=16 and n=32
+   - include unweighted optimal reference_max_load
 
-8. Exact plot files to generate
+2. plots/01_stateless_baseline_cv_load.png
+   - x-axis: policy
+   - top: cv_load_mean
+   - bottom: cost_per_ball_mean
+   - separate lines for n=16 and n=32
+   - include unweighted optimal reference_cv_load
 
-Generate these 14 plots:
+Experiment 2 plot files:
+3. plots/02_diminishing_returns_max_load.png
+   - x-axis: k
+   - top: max_load_mean
+   - bottom: cost_per_ball_mean
+   - separate lines for n=16 and n=32
+   - include unweighted optimal reference_max_load
 
-Experiment 1:
-- plots/01_stateless_baseline_max_load.png
-  - top: max_load_mean by policy
-  - bottom: cost_per_ball_mean by policy
-  - x-axis: policy
-  - separate lines for n=16 and n=32
-  - include reference_max_load line/markers for unweighted optimal
+4. plots/02_diminishing_returns_cv_load.png
+   - x-axis: k
+   - top: cv_load_mean
+   - bottom: cost_per_ball_mean
+   - separate lines for n=16 and n=32
+   - include unweighted optimal reference_cv_load
 
-- plots/01_stateless_baseline_cv_load.png
-  - top: cv_load_mean by policy
-  - bottom: cost_per_ball_mean by policy
-  - include reference_cv_load for unweighted optimal CV
+Experiment 3 plot files:
+5. plots/03_stateful_vs_stateless_unweighted_max_load.png
+   - x-axis: policy
+   - top: max_load_mean
+   - bottom: cost_per_ball_mean
+   - separate lines for n=16 and n=32
+   - include unweighted optimal reference_max_load
+   - no heap policies
 
-Experiment 2:
-- plots/02_diminishing_returns_max_load.png
-  - x-axis: k
-  - top: max_load_mean
-  - bottom: cost_per_ball_mean
-  - lines for n=16 and n=32
-  - include reference_max_load
+6. plots/03_stateful_vs_stateless_unweighted_cv_load.png
+   - x-axis: policy
+   - top: cv_load_mean
+   - bottom: cost_per_ball_mean
+   - separate lines for n=16 and n=32
+   - include unweighted optimal reference_cv_load
+   - no heap policies
 
-- plots/02_diminishing_returns_cv_load.png
-  - x-axis: k
-  - top: cv_load_mean
-  - bottom: cost_per_ball_mean
-  - include reference_cv_load
+Experiment 4 plot files:
+7. plots/04_weighted_round_robin_break_max_load.png
+   - x-axis: policy
+   - top: max_load_mean
+   - bottom: cost_per_ball_mean
+   - separate lines for n=16 and n=32
+   - include weighted average-load lower bound using reference_max_load
+   - add note in title/subtitle/legend:
+     "Weighted reference is average-load lower bound, not true optimum"
+   - no heap policies
 
-Experiment 3:
-- plots/03_stateful_vs_stateless_unweighted_max_load.png
-  - x-axis: policy
-  - top: max_load_mean
-  - bottom: cost_per_ball_mean
-  - lines for n=16 and n=32
-  - include unweighted optimal reference_max_load
-  - no heap policies
+8. plots/04_weighted_round_robin_break_cv_load.png
+   - x-axis: policy
+   - top: cv_load_mean
+   - bottom: cost_per_ball_mean
+   - separate lines for n=16 and n=32
+   - no weighted reference line for CV
+   - no heap policies
 
-- plots/03_stateful_vs_stateless_unweighted_cv_load.png
-  - top: cv_load_mean
-  - bottom: cost_per_ball_mean
-  - include unweighted optimal reference_cv_load
-  - no heap policies
+Special plotting requirement for Experiment 5:
+Do NOT create one combined heap sweep plot across n=16 and n=32.
+Instead, create exactly two files, one per bin count.
+Each file should contain 4 panels arranged as 2 rows x 2 columns.
 
-Experiment 4:
-- plots/04_weighted_round_robin_break_max_load.png
-  - x-axis: policy
-  - top: max_load_mean
-  - bottom: cost_per_ball_mean
-  - lines for n=16 and n=32
-  - include weighted average lower bound line/markers using reference_max_load
-  - include a note in the title or legend:
-    "Weighted reference is average-load lower bound, not true optimum"
+Experiment 5 plot files:
+9. plots/05_heap_sweep_n16.png
+   Data: only experiment_id="05_heap_sweep" and bins=16
+   Layout: 2x2 panels:
+   - Top-left: max_load_mean vs heap_size
+   - Bottom-left: cost_per_ball_mean vs heap_size for the max-load view
+   - Top-right: cv_load_mean vs heap_size
+   - Bottom-right: cost_per_ball_mean vs heap_size for the CV view
 
-- plots/04_weighted_round_robin_break_cv_load.png
-  - top: cv_load_mean
-  - bottom: cost_per_ball_mean
-  - no weighted reference line for CV
-  - no heap policies
+   Requirements:
+   - Use heap_size on the x-axis.
+   - Use line + markers.
+   - Include weighted average-load lower bound only in the max_load panel.
+   - Do not include reference line in the CV panel.
+   - Title should mention: "Heap sweep, n=16, weighted balls, k=2 for partial heap"
+   - Label full heap clearly at s=16, k=0.
 
-Experiment 5:
-- plots/05_heap_sweep_max_load.png
-  - x-axis: heap_size s
-  - top: max_load_mean
-  - bottom: cost_per_ball_mean
-  - lines for n=16 and n=32
-  - include weighted average lower bound using reference_max_load
-  - partial heap uses k=2
-  - full heap uses s=n, k=0
+10. plots/05_heap_sweep_n32.png
+   Same as above, but bins=32.
+   Title should mention: "Heap sweep, n=32, weighted balls, k=2 for partial heap"
+   Label full heap clearly at s=32, k=0.
 
-- plots/05_heap_sweep_cv_load.png
-  - x-axis: heap_size s
-  - top: cv_load_mean
-  - bottom: cost_per_ball_mean
-  - no weighted reference line for CV
-  - partial heap uses k=2
+Important for Experiment 5:
+- The two files should be readable standalone.
+- Do not use one combined n=16/n=32 line plot for heap sweep.
+- The story is how heap size affects quality and cost for each system size separately.
 
-Experiment 6:
-- plots/06_final_tradeoff_unweighted_max_load.png
-  - scatter: x=cost_per_ball_mean, y=max_load_mean
+Final tradeoff plots, Experiments 6 and 7:
+The previous idea of labeling every point is too cluttered.
+Make these plots more readable.
+
+Recommended approach:
+- Each final tradeoff file should use two side-by-side panels:
+  - left panel: n=16
+  - right panel: n=32
+- In each panel:
+  - x-axis: cost_per_ball_mean
+  - y-axis: max_load_mean or cv_load_mean
   - color by policy_family
-  - marker by bins
-  - include horizontal reference line for unweighted optimal max load.
-    Since n=16 and n=32 have different reference values, draw two reference lines with different style/label.
+  - marker by policy_family or simulator type
+  - use a legend for policy families
+  - annotate only selected important policies
 
-- plots/06_final_tradeoff_unweighted_cv_load.png
-  - scatter: x=cost_per_ball_mean, y=cv_load_mean
-  - color by policy_family
-  - marker by bins
-  - include horizontal reference lines for unweighted optimal CV for n=16 and n=32
+Do NOT annotate every point.
 
-Experiment 7:
-- plots/07_final_tradeoff_weighted_max_load.png
-  - scatter: x=cost_per_ball_mean, y=max_load_mean
-  - color by policy_family
-  - marker by bins
-  - include horizontal weighted average lower-bound reference lines using reference_max_load for n=16 and n=32
-  - title/legend note:
-    "Weighted lower bound = total weight / bins; true optimum requires partition/bin-packing"
+Highlight/annotate only these policies when they exist:
+- Random
+- Power-2
+- Round-robin
+- Absolute minimum
+- Full heap
 
-- plots/07_final_tradeoff_weighted_cv_load.png
-  - scatter: x=cost_per_ball_mean, y=cv_load_mean
-  - color by policy_family
-  - marker by bins
-  - no weighted reference line for CV
+Optionally also annotate:
+- Heap s=8
 
-9. Styling requirements
+All other points should be visible but unlabeled.
 
-Use consistent names:
+To improve readability:
+- Use slightly larger markers for highlighted points.
+- Use regular smaller markers for non-highlighted points.
+- Optionally draw a light Pareto/frontier guide line per panel:
+  - Sort points by cost_per_ball_mean.
+  - A point is Pareto-efficient if no other point has both lower/equal cost and lower/equal quality metric, with at least one strictly lower.
+  - Draw a thin dashed line through Pareto-efficient points.
+  - Keep it subtle.
+- If Pareto-frontier implementation becomes too complex, skip it. Do not block the task.
+
+Experiment 6 plot files:
+11. plots/06_final_tradeoff_unweighted_max_load.png
+   - two panels: n=16 and n=32
+   - x: cost_per_ball_mean
+   - y: max_load_mean
+   - include horizontal unweighted optimal max_load reference line in each panel
+   - annotate only selected important policies
+
+12. plots/06_final_tradeoff_unweighted_cv_load.png
+   - two panels: n=16 and n=32
+   - x: cost_per_ball_mean
+   - y: cv_load_mean
+   - include horizontal unweighted optimal CV reference line in each panel
+   - annotate only selected important policies
+
+Experiment 7 plot files:
+13. plots/07_final_tradeoff_weighted_max_load.png
+   - two panels: n=16 and n=32
+   - x: cost_per_ball_mean
+   - y: max_load_mean
+   - include horizontal weighted average-load lower-bound reference line in each panel
+   - title/subtitle/legend note:
+     "Weighted lower bound = total weight / bins; true optimum requires partition/bin-packing"
+   - annotate only selected important policies
+
+14. plots/07_final_tradeoff_weighted_cv_load.png
+   - two panels: n=16 and n=32
+   - x: cost_per_ball_mean
+   - y: cv_load_mean
+   - no weighted reference line for CV
+   - annotate only selected important policies
+
+Naming/style:
+Use consistent display labels:
 - Random
 - Power-2
 - Power-3
@@ -410,44 +416,48 @@ Use consistent names:
 - Full heap
 
 For heap:
-- Do not show k in the label except if needed in subtitles or metadata.
-- The story is heap size/state size, with k fixed to 2.
+- Do not show k in the main policy label except in experiment 5 subtitles/metadata.
+- The story is heap size/state size.
+- k is fixed to 2 for partial heap.
 
-For cost:
-- Always use cost_per_ball_mean.
-- Do not use total_cost on plots.
-
-For references:
+Reference rules:
 - Unweighted max_load graphs: show optimal max load.
 - Unweighted cv_load graphs: show optimal CV.
 - Weighted max_load graphs: show average-load lower bound.
 - Weighted cv_load graphs: no reference line.
 
-10. Add Makefile helpers
-
-Add targets:
+Makefile targets:
+Add:
 - make results
-  Runs the C++ binary and writes results/simulation_results.csv
+  Builds/runs the C++ binary and writes results/simulation_results.csv
 
 - make plots
-  Runs python plot_results.py after results exist
+  Runs python plot_results.py
 
 - make all-results
   Builds, runs results, and generates plots
 
-Keep existing make all/run/clean behavior.
-Update clean to optionally remove binary only.
-Add a new clean-results target to remove results/ and plots/.
+Keep existing:
+- make
+- make run
+- make clean
 
-11. Validation
+Add:
+- make clean-results
+  Removes results/ and plots/
 
+Validation:
 After implementation:
-- `make` should compile.
-- `make results` should create results/simulation_results.csv.
-- `make plots` should create all 14 PNG files.
-- Running `make results` twice should produce identical CSV numeric results.
-- The CSV should contain all experiments 01 through 07.
-- Experiments 3 and 4 must not include heap rows.
-- Experiment 5 heap partial rows must use k=2.
-- Weighted max-load plots must include the average-load lower bound reference.
-- Unweighted plots must include optimal references.
+- make compiles cleanly with -std=c++17 -Wall -Wextra -pedantic.
+- make results creates results/simulation_results.csv.
+- make plots creates exactly the 14 PNG files listed above.
+- Running make results twice produces identical CSV numeric results.
+- CSV contains experiment_id 01 through 07.
+- Experiments 3 and 4 do not include heap rows.
+- Experiment 5 has exactly two output files: 05_heap_sweep_n16.png and 05_heap_sweep_n32.png.
+- Experiment 5 partial heap rows use k=2.
+- Experiment 5 full heap rows use s=n and k=0.
+- Final tradeoff plots do not annotate every point.
+- Final tradeoff plots annotate only important points.
+- Weighted max-load plots include the average-load lower bound.
+- Unweighted plots include optimal references.

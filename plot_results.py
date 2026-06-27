@@ -25,6 +25,24 @@ BIN_MARKERS = {
     32: "s",
 }
 
+FAMILY_MARKERS = {
+    "stateless": "o",
+    "round_robin": "s",
+    "heap": "^",
+}
+
+IMPORTANT_POLICIES = {
+    "Random",
+    "Random weighted",
+    "Power-2",
+    "Power-2 weighted",
+    "Round-robin",
+    "Absolute minimum",
+    "Absolute minimum weighted",
+    "Full heap",
+    "Heap s=8",
+}
+
 
 def unique_in_order(values):
     seen = set()
@@ -50,6 +68,13 @@ def save_figure(fig, filename):
     fig.tight_layout()
     fig.savefig(PLOTS_DIR / filename, dpi=200)
     plt.close(fig)
+
+
+def remove_old_heap_sweep_plots():
+    for filename in ("05_heap_sweep_max_load.png", "05_heap_sweep_cv_load.png"):
+        path = PLOTS_DIR / filename
+        if path.exists():
+            path.unlink()
 
 
 def metric_label(metric):
@@ -148,7 +173,110 @@ def panel_plot(
     save_figure(fig, filename)
 
 
-def scatter_plot(
+def heap_sweep_plot(df, bins, filename):
+    data = df[(df["experiment_id"] == "05_heap_sweep") & (df["bins"] == bins)].copy()
+    data = data.sort_values("heap_size")
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharex=True)
+    max_axis = axes[0][0]
+    max_cost_axis = axes[1][0]
+    cv_axis = axes[0][1]
+    cv_cost_axis = axes[1][1]
+
+    x_values = data["heap_size"]
+    x_labels = [
+        f"{int(row.heap_size)}\nfull" if int(row.heap_size) == bins else str(int(row.heap_size))
+        for row in data.itertuples()
+    ]
+
+    max_axis.errorbar(
+        x_values,
+        data["max_load_mean"],
+        yerr=data["max_load_stddev"],
+        marker="o",
+        color="#1f77b4",
+        linewidth=2,
+        capsize=3,
+        label="Heap policy",
+    )
+    max_axis.plot(
+        x_values,
+        data["reference_max_load"],
+        linestyle="--",
+        marker="x",
+        color="#555555",
+        linewidth=1.5,
+        label="average-load lower bound",
+    )
+    max_cost_axis.errorbar(
+        x_values,
+        data["cost_per_ball_mean"],
+        yerr=data["cost_per_ball_stddev"],
+        marker="o",
+        color="#1f77b4",
+        linewidth=2,
+        capsize=3,
+    )
+
+    cv_axis.errorbar(
+        x_values,
+        data["cv_load_mean"],
+        yerr=data["cv_load_stddev"],
+        marker="s",
+        color="#d62728",
+        linewidth=2,
+        capsize=3,
+        label="Heap policy",
+    )
+    cv_cost_axis.errorbar(
+        x_values,
+        data["cost_per_ball_mean"],
+        yerr=data["cost_per_ball_stddev"],
+        marker="s",
+        color="#d62728",
+        linewidth=2,
+        capsize=3,
+    )
+
+    fig.suptitle(
+        f"Heap sweep, n={bins}, weighted balls, k=2 for partial heap",
+        fontsize=14,
+    )
+    max_axis.set_title("Max load")
+    cv_axis.set_title("CV load")
+    max_cost_axis.set_title("Cost for max-load view")
+    cv_cost_axis.set_title("Cost for CV view")
+
+    max_axis.set_ylabel("Max load")
+    cv_axis.set_ylabel("CV load")
+    max_cost_axis.set_ylabel("Cost per ball")
+    cv_cost_axis.set_ylabel("Cost per ball")
+    max_cost_axis.set_xlabel("Heap size s")
+    cv_cost_axis.set_xlabel("Heap size s")
+
+    for axis in (max_axis, max_cost_axis, cv_axis, cv_cost_axis):
+        axis.grid(True, alpha=0.25)
+        axis.set_xticks(list(x_values))
+        axis.set_xticklabels(x_labels)
+
+    max_axis.legend(fontsize=9)
+    cv_axis.legend(fontsize=9)
+    save_figure(fig, filename)
+
+
+def pareto_points(data, metric):
+    sorted_data = data.sort_values(["cost_per_ball_mean", metric])
+    efficient = []
+    best_quality = None
+    for _, row in sorted_data.iterrows():
+        quality = row[metric]
+        if best_quality is None or quality < best_quality:
+            efficient.append(row)
+            best_quality = quality
+    return pd.DataFrame(efficient)
+
+
+def final_tradeoff_plot(
     df,
     experiment_id,
     filename,
@@ -158,27 +286,7 @@ def scatter_plot(
     reference_note=None,
 ):
     data = df[df["experiment_id"] == experiment_id].copy()
-    fig, axis = plt.subplots(figsize=(10, 7))
-
-    for _, row in data.iterrows():
-        family = row["policy_family"]
-        bins = int(row["bins"])
-        axis.scatter(
-            row["cost_per_ball_mean"],
-            row[metric],
-            color=FAMILY_COLORS.get(family, "#333333"),
-            marker=BIN_MARKERS.get(bins, "o"),
-            s=70,
-            edgecolor="black",
-            linewidth=0.5,
-        )
-        axis.annotate(
-            row["policy_name"],
-            (row["cost_per_ball_mean"], row[metric]),
-            textcoords="offset points",
-            xytext=(5, 5),
-            fontsize=8,
-        )
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=False)
 
     family_handles = [
         plt.Line2D(
@@ -194,49 +302,71 @@ def scatter_plot(
         for family, color in FAMILY_COLORS.items()
         if family in set(data["policy_family"])
     ]
-    bin_handles = [
-        plt.Line2D(
-            [0],
-            [0],
-            marker=marker,
-            color="black",
-            linestyle="",
-            label=f"n={bins}",
-            markersize=8,
-        )
-        for bins, marker in BIN_MARKERS.items()
-        if bins in set(data["bins"])
-    ]
 
-    reference_handles = []
-    if reference_column is not None:
-        for bins in sorted(data["bins"].unique()):
-            ref_value = data[data["bins"] == bins][reference_column].iloc[0]
+    for axis, bins in zip(axes, sorted(data["bins"].unique())):
+        subset = data[data["bins"] == bins].copy()
+        for _, row in subset.iterrows():
+            family = row["policy_family"]
+            important = row["policy_name"] in IMPORTANT_POLICIES
+            axis.scatter(
+                row["cost_per_ball_mean"],
+                row[metric],
+                color=FAMILY_COLORS.get(family, "#333333"),
+                marker=FAMILY_MARKERS.get(family, "o"),
+                s=95 if important else 48,
+                edgecolor="black",
+                linewidth=0.7 if important else 0.4,
+            )
+            if important:
+                axis.annotate(
+                    row["policy_name"].replace(" weighted", ""),
+                    (row["cost_per_ball_mean"], row[metric]),
+                    textcoords="offset points",
+                    xytext=(5, 5),
+                    fontsize=8,
+                )
+
+        frontier = pareto_points(subset, metric)
+        if len(frontier) > 1:
+            axis.plot(
+                frontier["cost_per_ball_mean"],
+                frontier[metric],
+                linestyle="--",
+                color="#777777",
+                linewidth=1,
+                alpha=0.65,
+                label="Pareto guide",
+            )
+
+        reference_handles = []
+        if reference_column is not None:
+            ref_value = subset[reference_column].iloc[0]
             line = axis.axhline(
                 ref_value,
-                linestyle="--" if int(bins) == 16 else ":",
-                color=COLORS.get(int(bins), "gray"),
-                linewidth=1.7,
-                label=f"reference n={bins}",
+                linestyle=":",
+                color="#444444",
+                linewidth=1.6,
+                label="reference",
             )
             reference_handles.append(line)
 
+        axis.set_title(f"n={bins}", fontsize=12)
+        axis.set_xlabel("Cost per ball", fontsize=11)
+        axis.set_ylabel(metric_label(metric), fontsize=11)
+        axis.grid(True, alpha=0.25)
+
+        handles = family_handles + reference_handles
+        axis.legend(handles=handles, fontsize=9, loc="best")
+
     full_title = title if reference_note is None else f"{title}\n{reference_note}"
-    axis.set_title(full_title, fontsize=13)
-    axis.set_xlabel("Cost per ball", fontsize=11)
-    axis.set_ylabel(metric_label(metric), fontsize=11)
-    axis.grid(True, alpha=0.25)
-    axis.legend(
-        handles=family_handles + bin_handles + reference_handles,
-        fontsize=9,
-        loc="best",
-    )
+    fig.suptitle(full_title, fontsize=14)
 
     save_figure(fig, filename)
 
 
 def main():
     df = load_results()
+    remove_old_heap_sweep_plots()
 
     panel_plot(
         df,
@@ -325,28 +455,10 @@ def main():
         "Policy",
         "Experiment 4: Weighted balls break round-robin - CV load",
     )
-    panel_plot(
-        df,
-        "05_heap_sweep",
-        "05_heap_sweep_max_load.png",
-        "max_load_mean",
-        "heap_size",
-        "Heap size s",
-        "Experiment 5: Heap size sweep - max load",
-        reference_column="reference_max_load",
-        reference_label="average-load lower bound",
-    )
-    panel_plot(
-        df,
-        "05_heap_sweep",
-        "05_heap_sweep_cv_load.png",
-        "cv_load_mean",
-        "heap_size",
-        "Heap size s",
-        "Experiment 5: Heap size sweep - CV load",
-    )
+    heap_sweep_plot(df, 16, "05_heap_sweep_n16.png")
+    heap_sweep_plot(df, 32, "05_heap_sweep_n32.png")
 
-    scatter_plot(
+    final_tradeoff_plot(
         df,
         "06_final_tradeoff_unweighted",
         "06_final_tradeoff_unweighted_max_load.png",
@@ -354,7 +466,7 @@ def main():
         "Experiment 6: Final tradeoff unweighted - max load",
         reference_column="reference_max_load",
     )
-    scatter_plot(
+    final_tradeoff_plot(
         df,
         "06_final_tradeoff_unweighted",
         "06_final_tradeoff_unweighted_cv_load.png",
@@ -362,7 +474,7 @@ def main():
         "Experiment 6: Final tradeoff unweighted - CV load",
         reference_column="reference_cv_load",
     )
-    scatter_plot(
+    final_tradeoff_plot(
         df,
         "07_final_tradeoff_weighted",
         "07_final_tradeoff_weighted_max_load.png",
@@ -374,7 +486,7 @@ def main():
             "partition/bin-packing"
         ),
     )
-    scatter_plot(
+    final_tradeoff_plot(
         df,
         "07_final_tradeoff_weighted",
         "07_final_tradeoff_weighted_cv_load.png",
