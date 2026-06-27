@@ -1,305 +1,150 @@
-We are extending the current C++ balls-into-bins simulation.
+Review and fix the current HeapSizeSPowerOfKSimulator implementation.
 
-Current code state:
+Current issue:
+The simulator currently reconstructs the list of untracked bins by scanning all n bins inside sampleUntrackedBins() and in the full-outside-scan path.
 
-* SimulationBase is the abstract base class.
-* PowerKSimulator inherits from SimulationBase.
-* StatefulRoundRobinSimulator inherits from SimulationBase.
-* Weighted balls are already implemented in SimulationBase using:
+This is not acceptable for the policy logic. The simulator should logically know which bins are inside the heap and which bins are outside the heap as part of the heap policy state.
 
-  * bool weighted_balls_
-  * double max_weight_
-  * unsigned int workload_seed_
-  * std::mt19937 workload_rng_
-* SimulationBase already has:
+Important modeling decision:
+Knowing heap membership is part of the heap abstraction.
+Do not charge additional logical memory cost for maintaining membership/indexing structures.
+The logical persistent memory cost remains:
 
-  * drawBallWeight()
-  * previewBallWeights()
-  * addBallToBin(int bin_index, double weight)
-* Ball-weight generation must not add logical cost.
-* drawRandomBins() uses the policy RNG and charges "random_draw".
-* The project uses namespace balls_bins.
-* Do not use `using namespace std;`.
-* Keep the implementation simple, explicit, and interview-readable.
+s_ * cost_weights_["state_memory_per_slot"]
+
+Do not add extra memory costs for helper vectors or position maps.
 
 Goal:
-Implement a new simulator class:
+Avoid logically O(n) work when k < n - s.
+Sampling k untracked bins should be O(k), not O(n).
 
-HeapSizeSPowerOfKSimulator
+Required design:
+In HeapSizeSPowerOfKSimulator, add and maintain:
 
-This class models a partial persistent heap policy.
+std::vector<int> untracked_bins_;
+std::vector<int> heap_positions_;
+std::vector<int> untracked_positions_;
 
-Definitions:
+Semantics:
 
-* n = number of bins
-* m = number of balls
-* s = persistent heap size, i.e. number of bins tracked in the heap
-* k = number of bins sampled from the untracked bins on each placement decision
+* untracked_bins_ stores all bins currently outside the heap.
+* heap_positions_[bin] is the current index of bin inside heap_, or -1 if bin is not tracked.
+* untracked_positions_[bin] is the current index of bin inside untracked_bins_, or -1 if bin is tracked.
 
-Policy intuition:
-The simulator maintains a persistent heap of s tracked bins.
-For each ball:
-
-1. Optionally inspect k bins from outside the heap.
-2. Find the minimum-load inspected untracked bin.
-3. Try to admit that candidate into the heap.
-4. Place the ball into the minimum-load bin currently tracked by the heap.
-5. Update the heap entry after placement.
-
-Constructor:
-Create:
-
-HeapSizeSPowerOfKSimulator(
-int m,
-int n,
-int s,
-int k,
-int trials = 1,
-bool weighted_balls = false,
-double max_weight = 1.0,
-unsigned int workload_seed = 42
-);
-
-Forward m, n, trials, weighted_balls, max_weight, and workload_seed to SimulationBase.
-
-Validation:
-
-* 1 <= s <= n
-* If s < n:
-
-  * 1 <= k <= n - s
-* If s == n:
-
-  * k is irrelevant because all bins are tracked.
-  * Allow k == 0.
-  * Do not require k >= 1 in this case.
-  * Do not sample outside the heap.
-  * Do not charge random_draw, outside load reads, or outside comparisons.
-* Throw std::invalid_argument for invalid configurations.
-
-Public getters:
-
-* int getHeapSize() const;
-* int getK() const;
-
-Files:
-
-* Create HeapSizeSPowerOfKSimulator.h
-* Create HeapSizeSPowerOfKSimulator.cpp
-* Update Makefile so HeapSizeSPowerOfKSimulator.cpp and HeapSizeSPowerOfKSimulator.h are included.
-* Update main.cpp to include and run the new simulator.
-
-Internal state:
-Use a private struct, for example:
-
-struct HeapEntry {
-double load;
-int bin_index;
-};
-
-Maintain:
-
-* std::vector<HeapEntry> heap_;
-* std::vector<bool> is_tracked_;
-* int s_;
-* int k_;
-
-Use std::make_heap, std::push_heap, std::pop_heap, or simple vector operations if clearer.
-
-Important heap ordering:
-C++ heap helpers create max-heaps by default, so be careful.
-We need the policy to retrieve the minimum-load tracked bin.
-Use a comparator or helper functions so that:
-
-* Smaller load is better.
-* If loads are equal, smaller bin_index is better.
-* The heap root should represent the minimum tracked bin.
-
-Keep deterministic tie-breaking.
+These structures are part of the heap/membership representation and should not add logical memory cost.
 
 Trial initialization:
-At the beginning of every runSingleTrial():
+In initializeTrialState():
 
-* Clear heap_.
-* Reset is_tracked_ to size n_, all false.
-* Initialize the heap with bin indices 0, 1, ..., s_ - 1.
-* Mark these bins as tracked.
-* Initial loads are 0.0 because SimulationBase::reset() has already cleared bins_.
-* Charge persistent state memory once per trial:
+* Clear heap_ and untracked_bins_.
+* Resize heap_positions_ and untracked_positions_ to n_ and initialize all entries to -1.
+* Add bins 0..s_-1 to heap_.
+* Set heap_positions_[bin] for those bins.
+* Add bins s_..n_-1 to untracked_bins_.
+* Set untracked_positions_[bin] for those bins.
+* Build the heap.
+* Charge only:
   total_cost_ += static_cast<double>(s_) * cost_weights_["state_memory_per_slot"];
 
-Cost model:
-The total_cost_ metric measures only operational placement-policy cost.
-Do not charge any cost for drawing ball weights.
-Do not add a "weight_draw" cost.
-Do not reuse "random_draw" for ball weights.
+Do not use std::vector<bool> is_tracked_ anymore unless you keep it only as a redundant debug aid. Prefer removing it to avoid inconsistent state.
 
-Use existing cost keys:
+Sampling logic:
+Update sampleUntrackedBins(int count):
 
-* "random_draw": randomly sampling an untracked candidate bin
-* "load_read": reading actual bin load from bins_
-* "compare": load comparisons
-* "state_read": reading persistent heap/tracked state
-* "state_update": modifying persistent heap/tracked state
-* "state_memory_per_slot": persistent heap memory
+* It must not scan all n bins.
+* It should sample count distinct bins from untracked_bins_ using partial shuffle over untracked_bins_ indices.
+* It should not permanently reorder untracked_bins_ unless that is intentional and positions are updated correctly.
+* Simpler preferred implementation:
 
-Add a new default cost key to SimulationBase:
+  * Create a local vector<int> sampled_indices containing 0..untracked_bins_.size()-1
+  * Partial shuffle sampled_indices for count entries
+  * Return untracked_bins_[sampled_indices[i]]
+    This still allocates O(n-s), so avoid that too if possible.
 
-* "heap_update_per_level" with default value 1.0
+Better implementation:
 
-Add a private helper:
-int heapUpdateLevels() const;
-
-Return:
-
-* 1 if s_ <= 1
-* otherwise ceil(log2(s_ + 1))
-
-Whenever the heap is rebuilt/reordered after an update, charge:
-total_cost_ += static_cast<double>(heapUpdateLevels()) * cost_weights_["heap_update_per_level"];
-
-Do not over-engineer exact heap internals. The goal is a logical cost model that captures O(log s) heap update behavior.
-
-Untracked sampling logic:
-If s_ == n_:
-
-* Skip all outside sampling/admission logic.
-* Do not charge random_draw.
-* Do not charge outside load_read.
-* Do not charge outside compare.
-* The policy is a full persistent heap over all bins.
-
-If s_ < n_:
-There are n_ - s_ untracked bins.
-
-Special case: k_ == n_ - s_
-
-* This means we inspect all untracked bins.
-* Do not charge random_draw, because this is not random sampling.
-* Iterate over all currently untracked bins.
-* For each untracked bin:
-
-  * read its load using readBinLoad(bin), so load_read is charged.
-* Use comparison charging to find the minimum-load untracked bin.
-* This models checking all untracked bins, not randomly sampling them.
-
-General case: k_ < n_ - s_
-
-* Randomly sample k_ distinct bins from the currently untracked bins.
-* Do not use drawRandomBins(k_) directly, because it samples from all bins and may include tracked bins.
-* Implement a helper that samples from untracked bins only.
+* Use a local std::unordered_set<int> or vector of sampled positions to sample distinct positions from [0, untracked_bins_.size()-1] until count positions are selected.
+* Since count == k and this path only applies when k < n-s, this is logically O(k) expected time.
 * Charge:
-  total_cost_ += static_cast<double>(k_) * cost_weights_["random_draw"];
-* For each sampled bin:
+  total_cost_ += static_cast<double>(count) * cost_weights_["random_draw"];
+* Return the sampled bin indices.
+* Do not scan all n bins.
 
-  * read its current load using readBinLoad(bin)
-* Use comparison charging to find the minimum sampled untracked bin.
+Full outside scan:
+If k_ == n_ - s_:
 
-Admission logic:
-After finding the best untracked candidate:
+* Iterating over all untracked_bins_ is correct and intentional.
+* Do not charge random_draw.
+* For each bin in untracked_bins_:
 
-* Find the heaviest currently tracked bin in heap_.
-* For simplicity, scan heap_.
-* When scanning heap_:
+  * read its load using readBinLoad(bin)
+  * compare to find the minimum
+    This models checking all untracked bins.
 
-  * charge state_read for each heap entry inspected
-  * charge compare for comparisons
-* The heaviest tracked bin is the worst tracked entry:
+Admission update:
+When a candidate is admitted:
 
-  * larger load is worse
-  * if loads are equal, evict the larger bin_index for deterministic behavior
-* Admit the candidate if:
-  candidate_load <= heaviest_tracked_load
-* Use <= intentionally so that early in the simulation, when many loads are equal, untracked bins can enter the heap.
-* If admitted:
+* Let evicted_bin be the bin currently in the heaviest heap entry.
+* Replace evicted_bin with candidate_bin in heap_.
+* Update heap_positions_:
 
-  * Mark the evicted bin as untracked in is_tracked_
-  * Mark the candidate bin as tracked
-  * Replace the heaviest heap entry with the candidate
-  * Charge state_update for modifying persistent state
-  * Rebuild/reorder heap_
-  * Charge heap_update_per_level * heapUpdateLevels()
-* If not admitted:
+  * heap_positions_[evicted_bin] = -1
+  * heap_positions_[candidate_bin] = heap index where it was inserted
+* Update untracked_bins_ and untracked_positions_ so that:
 
-  * Do not modify heap_
-  * Do not charge state_update
+  * candidate_bin is removed from untracked_bins_
+  * evicted_bin is added to untracked_bins_
+    This update must be O(1).
 
-Placement logic per ball:
-For each ball:
+Implement helper methods if useful:
 
-1. Draw the ball weight using drawBallWeight().
+* void removeFromUntracked(int bin)
+* void addToUntracked(int bin)
+* void updateHeapPositions()
+* void rebuildHeapAndPositions()
 
-   * This must not charge cost.
-2. If s_ < n_, perform outside sampling and admission.
+For O(1) removeFromUntracked:
 
-   * If s_ == n_, skip this entirely.
-3. Read the minimum tracked bin from the heap root.
+* Find the index from untracked_positions_[bin].
+* Swap that element with the last element of untracked_bins_.
+* Update untracked_positions_ for the swapped bin.
+* pop_back().
+* Set untracked_positions_[bin] = -1.
 
-   * Charge state_read.
-4. Add the ball to that bin using addBallToBin(min_bin, ball_weight).
-5. Update the heap root load by adding ball_weight.
+For addToUntracked:
 
-   * Charge state_update.
-6. Reorder heap_ after the root load changed.
+* Set untracked_positions_[bin] = untracked_bins_.size().
+* push_back(bin).
 
-   * Charge heap_update_per_level * heapUpdateLevels().
+Heap positions:
+Because reorderHeap() calls std::make_heap(), heap entry positions may change.
+After every reorderHeap(), update heap_positions_ by scanning heap_ once.
+This scan is an implementation detail of maintaining heap positions after reorder.
+Do not charge extra logical cost for updating helper position metadata.
+The logical heap update cost is already charged by:
+heapUpdateLevels() * cost_weights_["heap_update_per_level"]
 
-Important:
-The canonical bin loads are still bins_ in SimulationBase.
-The heap stores a policy-state copy of the tracked loads.
-Whenever a ball is added to a tracked bin, update both:
+Cost model:
 
-* bins_ using addBallToBin()
-* the corresponding HeapEntry load
+* Do not charge extra costs for maintaining heap_positions_ or untracked_positions_.
+* Do not charge extra memory for untracked_bins_ or positions.
+* Keep charging:
 
-Weighted balls:
-
-* Use drawBallWeight() exactly once per ball.
-* If weighted_balls is false, every ball weight is 1.0.
-* If weighted_balls is true, use the existing deterministic workload RNG behavior from SimulationBase.
-* Do not store all ball weights.
-
-main.cpp:
-
-* Add:
-  #include "HeapSizeSPowerOfKSimulator.h"
-
-Add example runs for 16 bins:
-
-1. Full heap:
-   HeapSizeSPowerOfKSimulator(10000, 16, 16, 0, trials)
-   Label: "Unweighted full heap (s=16)"
-
-2. Partial heap with random outside sampling:
-   HeapSizeSPowerOfKSimulator(10000, 16, 4, 2, trials)
-   Label: "Unweighted partial heap (s=4, k=2)"
-
-3. Partial heap with full outside scan:
-   HeapSizeSPowerOfKSimulator(10000, 16, 4, 12, trials)
-   Label: "Unweighted partial heap full outside scan (s=4, k=12)"
-
-Add equivalent weighted examples using:
-
-* weighted_balls = true
-* max_weight = weighted_max_weight
-* workload_seed = workload_seed
-
-At minimum, include:
-
-* Weighted full heap for 16 bins
-* Weighted partial heap (s=4, k=2) for 16 bins
-
-Optional:
-Add 32-bin examples too if the main file remains readable.
-
-Use the existing printSimulationSummary function.
+  * random_draw only for random sampling of untracked candidates
+  * load_read for reading actual bin loads
+  * compare for comparisons
+  * state_read for reading heap entries
+  * state_update for modifying tracked heap state
+  * heap_update_per_level for logical O(log s) heap updates
+  * state_memory_per_slot only for s heap entries
 
 Correctness requirements:
 
-* If s == n, the simulator must not charge any outside sampling/admission costs.
-* If k == n - s, the simulator must not charge random_draw, but must charge load_read and compare for finding the minimum among all untracked bins.
-* If k < n - s, the simulator must charge random_draw once per sampled untracked bin.
-* Sampling must never include bins currently tracked in the heap.
-* Do not change the behavior of PowerKSimulator or StatefulRoundRobinSimulator.
+* Sampling with k < n - s must never scan all n bins.
+* Sampling must never include bins currently in the heap.
+* When k == n - s, scanning all untracked_bins_ is correct.
+* When s == n, untracked_bins_ is empty and all outside sampling/admission logic must be skipped.
+* Keep behavior for weighted balls unchanged.
+* Do not change PowerKSimulator or StatefulRoundRobinSimulator.
 * Keep all code inside namespace balls_bins.
-* Prefer clarity over cleverness.
+* Prefer clear helper methods over clever code.

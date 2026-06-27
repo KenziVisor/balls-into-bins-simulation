@@ -38,12 +38,17 @@ private:
                               int best_bin);
     bool isWorseTrackedEntry(const HeapEntry& candidate, const HeapEntry& worst);
     int findHeaviestTrackedEntryIndex();
+    void removeFromUntracked(int bin);
+    void addToUntracked(int bin);
+    void updateHeapPositions();
     void reorderHeap();
     int heapUpdateLevels() const;
     static bool heapEntryIsWorse(const HeapEntry& left, const HeapEntry& right);
 
     std::vector<HeapEntry> heap_;
-    std::vector<bool> is_tracked_;
+    std::vector<int> untracked_bins_;
+    std::vector<int> heap_positions_;
+    std::vector<int> untracked_positions_;
     int s_;
     int k_;
 };

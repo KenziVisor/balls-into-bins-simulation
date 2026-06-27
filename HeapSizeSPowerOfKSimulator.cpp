@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 namespace balls_bins {
@@ -17,7 +18,9 @@ HeapSizeSPowerOfKSimulator::HeapSizeSPowerOfKSimulator(int m,
                                                        unsigned int workload_seed)
     : SimulationBase(m, n, trials, weighted_balls, max_weight, workload_seed),
       heap_(),
-      is_tracked_(),
+      untracked_bins_(),
+      heap_positions_(),
+      untracked_positions_(),
       s_(s),
       k_(k) {
     if (s_ < 1 || s_ > n_) {
@@ -64,14 +67,23 @@ void HeapSizeSPowerOfKSimulator::runSingleTrial() {
 
 void HeapSizeSPowerOfKSimulator::initializeTrialState() {
     heap_.clear();
-    is_tracked_.assign(static_cast<std::size_t>(n_), false);
+    untracked_bins_.clear();
+    heap_positions_.assign(static_cast<std::size_t>(n_), -1);
+    untracked_positions_.assign(static_cast<std::size_t>(n_), -1);
 
     for (int bin = 0; bin < s_; ++bin) {
         heap_.push_back({0.0, bin});
-        is_tracked_[static_cast<std::size_t>(bin)] = true;
+        heap_positions_[static_cast<std::size_t>(bin)] = bin;
+    }
+
+    for (int bin = s_; bin < n_; ++bin) {
+        untracked_positions_[static_cast<std::size_t>(bin)] =
+            static_cast<int>(untracked_bins_.size());
+        untracked_bins_.push_back(bin);
     }
 
     std::make_heap(heap_.begin(), heap_.end(), heapEntryIsWorse);
+    updateHeapPositions();
     total_cost_ += static_cast<double>(s_) * cost_weights_["state_memory_per_slot"];
 }
 
@@ -79,11 +91,7 @@ void HeapSizeSPowerOfKSimulator::maybeAdmitUntrackedBin() {
     std::vector<int> candidates;
 
     if (k_ == n_ - s_) {
-        for (int bin = 0; bin < n_; ++bin) {
-            if (!is_tracked_[static_cast<std::size_t>(bin)]) {
-                candidates.push_back(bin);
-            }
-        }
+        candidates = untracked_bins_;
     } else {
         candidates = sampleUntrackedBins(k_);
     }
@@ -111,8 +119,13 @@ void HeapSizeSPowerOfKSimulator::maybeAdmitUntrackedBin() {
         return;
     }
 
-    is_tracked_[static_cast<std::size_t>(worst_entry.bin_index)] = false;
-    is_tracked_[static_cast<std::size_t>(best_bin)] = true;
+    const int evicted_bin = worst_entry.bin_index;
+
+    removeFromUntracked(best_bin);
+    addToUntracked(evicted_bin);
+
+    heap_positions_[static_cast<std::size_t>(evicted_bin)] = -1;
+    heap_positions_[static_cast<std::size_t>(best_bin)] = worst_index;
     heap_[static_cast<std::size_t>(worst_index)] = {best_load, best_bin};
 
     total_cost_ += cost_weights_["state_update"];
@@ -120,26 +133,21 @@ void HeapSizeSPowerOfKSimulator::maybeAdmitUntrackedBin() {
 }
 
 std::vector<int> HeapSizeSPowerOfKSimulator::sampleUntrackedBins(int count) {
-    std::vector<int> untracked_bins;
+    std::vector<int> sampled_bins;
+    std::unordered_set<int> sampled_positions;
 
-    for (int bin = 0; bin < n_; ++bin) {
-        if (!is_tracked_[static_cast<std::size_t>(bin)]) {
-            untracked_bins.push_back(bin);
+    while (static_cast<int>(sampled_bins.size()) < count) {
+        std::uniform_int_distribution<int> distribution(
+            0, static_cast<int>(untracked_bins_.size()) - 1);
+        const int position = distribution(rng_);
+
+        if (sampled_positions.insert(position).second) {
+            sampled_bins.push_back(untracked_bins_[static_cast<std::size_t>(position)]);
         }
     }
 
-    for (int i = 0; i < count; ++i) {
-        std::uniform_int_distribution<int> distribution(
-            i, static_cast<int>(untracked_bins.size()) - 1);
-        const int swap_index = distribution(rng_);
-        std::swap(untracked_bins[static_cast<std::size_t>(i)],
-                  untracked_bins[static_cast<std::size_t>(swap_index)]);
-    }
-
     total_cost_ += static_cast<double>(count) * cost_weights_["random_draw"];
-    untracked_bins.resize(static_cast<std::size_t>(count));
-
-    return untracked_bins;
+    return sampled_bins;
 }
 
 bool HeapSizeSPowerOfKSimulator::isBetterMinCandidate(double candidate_load,
@@ -184,8 +192,34 @@ int HeapSizeSPowerOfKSimulator::findHeaviestTrackedEntryIndex() {
     return worst_index;
 }
 
+void HeapSizeSPowerOfKSimulator::removeFromUntracked(int bin) {
+    const int position = untracked_positions_[static_cast<std::size_t>(bin)];
+    const int last_bin = untracked_bins_.back();
+
+    untracked_bins_[static_cast<std::size_t>(position)] = last_bin;
+    untracked_positions_[static_cast<std::size_t>(last_bin)] = position;
+    untracked_bins_.pop_back();
+    untracked_positions_[static_cast<std::size_t>(bin)] = -1;
+}
+
+void HeapSizeSPowerOfKSimulator::addToUntracked(int bin) {
+    untracked_positions_[static_cast<std::size_t>(bin)] =
+        static_cast<int>(untracked_bins_.size());
+    untracked_bins_.push_back(bin);
+}
+
+void HeapSizeSPowerOfKSimulator::updateHeapPositions() {
+    std::fill(heap_positions_.begin(), heap_positions_.end(), -1);
+
+    for (std::size_t i = 0; i < heap_.size(); ++i) {
+        heap_positions_[static_cast<std::size_t>(heap_[i].bin_index)] =
+            static_cast<int>(i);
+    }
+}
+
 void HeapSizeSPowerOfKSimulator::reorderHeap() {
     std::make_heap(heap_.begin(), heap_.end(), heapEntryIsWorse);
+    updateHeapPositions();
     total_cost_ += static_cast<double>(heapUpdateLevels()) *
                    cost_weights_["heap_update_per_level"];
 }
