@@ -37,12 +37,11 @@ private:
                               int candidate_bin,
                               double best_load,
                               int best_bin);
-    bool isWorseTrackedEntry(const HeapEntry& candidate, const HeapEntry& worst);
-    int findHeaviestTrackedEntryIndex();
     void removeFromUntracked(int bin);
     void addToUntracked(int bin);
     void updateHeapPositions();
-    void reorderHeap();
+    void updateHeapPositionsAlongInsertionPath(std::size_t insertion_index);
+    void repairHeapFromRoot();
     int heapUpdateLevels() const;
     static bool heapEntryIsWorse(const HeapEntry& left, const HeapEntry& right);
 

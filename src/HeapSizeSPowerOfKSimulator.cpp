@@ -68,7 +68,7 @@ void HeapSizeSPowerOfKSimulator::runSingleTrial() {
 
         heap_.front().load += ball_weight;
         addStateUpdateCost(1.0);
-        reorderHeap();
+        repairHeapFromRoot();
     }
 }
 
@@ -116,27 +116,26 @@ void HeapSizeSPowerOfKSimulator::maybeAdmitUntrackedBin() {
         }
     }
 
-    const int worst_index = findHeaviestTrackedEntryIndex();
-    const HeapEntry& worst_entry = heap_[static_cast<std::size_t>(worst_index)];
+    const std::size_t insertion_index = heap_.size();
+    heap_.push_back({best_load, best_bin});
+    std::push_heap(heap_.begin(), heap_.end(), heapEntryIsWorse);
 
-    addCompareCost(1.0);
-    const bool should_admit = best_load <= worst_entry.load;
+    const HeapEntry discarded_entry = heap_.back();
+    heap_.pop_back();
+    updateHeapPositionsAlongInsertionPath(insertion_index);
 
-    if (!should_admit) {
+    addHeapUpdateCost(static_cast<double>(heapUpdateLevels()));
+
+    if (discarded_entry.bin_index == best_bin) {
+        heap_positions_[static_cast<std::size_t>(best_bin)] = -1;
         return;
     }
 
-    const int evicted_bin = worst_entry.bin_index;
-
     removeFromUntracked(best_bin);
-    addToUntracked(evicted_bin);
+    addToUntracked(discarded_entry.bin_index);
 
-    heap_positions_[static_cast<std::size_t>(evicted_bin)] = -1;
-    heap_positions_[static_cast<std::size_t>(best_bin)] = worst_index;
-    heap_[static_cast<std::size_t>(worst_index)] = {best_load, best_bin};
-
+    heap_positions_[static_cast<std::size_t>(discarded_entry.bin_index)] = -1;
     addStateUpdateCost(1.0);
-    reorderHeap();
 }
 
 std::vector<int> HeapSizeSPowerOfKSimulator::sampleUntrackedBins(int count) {
@@ -170,35 +169,6 @@ bool HeapSizeSPowerOfKSimulator::isBetterMinCandidate(double candidate_load,
     return candidate_bin < best_bin;
 }
 
-bool HeapSizeSPowerOfKSimulator::isWorseTrackedEntry(const HeapEntry& candidate,
-                                                     const HeapEntry& worst) {
-    addCompareCost(1.0);
-
-    if (candidate.load != worst.load) {
-        return candidate.load > worst.load;
-    }
-
-    return candidate.bin_index > worst.bin_index;
-}
-
-int HeapSizeSPowerOfKSimulator::findHeaviestTrackedEntryIndex() {
-    int worst_index = 0;
-
-    for (std::size_t i = 0; i < heap_.size(); ++i) {
-        addStateReadCost(1.0);
-
-        if (i == 0) {
-            continue;
-        }
-
-        if (isWorseTrackedEntry(heap_[i], heap_[static_cast<std::size_t>(worst_index)])) {
-            worst_index = static_cast<int>(i);
-        }
-    }
-
-    return worst_index;
-}
-
 void HeapSizeSPowerOfKSimulator::removeFromUntracked(int bin) {
     const int position = untracked_positions_[static_cast<std::size_t>(bin)];
     const int last_bin = untracked_bins_.back();
@@ -224,9 +194,52 @@ void HeapSizeSPowerOfKSimulator::updateHeapPositions() {
     }
 }
 
-void HeapSizeSPowerOfKSimulator::reorderHeap() {
-    std::make_heap(heap_.begin(), heap_.end(), heapEntryIsWorse);
-    updateHeapPositions();
+void HeapSizeSPowerOfKSimulator::updateHeapPositionsAlongInsertionPath(
+    std::size_t insertion_index) {
+    while (true) {
+        if (insertion_index < heap_.size()) {
+            heap_positions_[static_cast<std::size_t>(heap_[insertion_index].bin_index)] =
+                static_cast<int>(insertion_index);
+        }
+
+        if (insertion_index == 0) {
+            break;
+        }
+
+        insertion_index = (insertion_index - 1) / 2;
+    }
+}
+
+void HeapSizeSPowerOfKSimulator::repairHeapFromRoot() {
+    std::size_t index = 0;
+
+    while (true) {
+        const std::size_t left_child = 2 * index + 1;
+        const std::size_t right_child = left_child + 1;
+
+        if (left_child >= heap_.size()) {
+            break;
+        }
+
+        std::size_t best_child = left_child;
+        if (right_child < heap_.size() &&
+            heapEntryIsWorse(heap_[best_child], heap_[right_child])) {
+            best_child = right_child;
+        }
+
+        if (!heapEntryIsWorse(heap_[index], heap_[best_child])) {
+            break;
+        }
+
+        std::swap(heap_[index], heap_[best_child]);
+        heap_positions_[static_cast<std::size_t>(heap_[index].bin_index)] =
+            static_cast<int>(index);
+        heap_positions_[static_cast<std::size_t>(heap_[best_child].bin_index)] =
+            static_cast<int>(best_child);
+
+        index = best_child;
+    }
+
     addHeapUpdateCost(static_cast<double>(heapUpdateLevels()));
 }
 
