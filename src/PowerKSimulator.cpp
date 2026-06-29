@@ -1,6 +1,7 @@
 #include "balls_bins/PowerKSimulator.h"
 
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace balls_bins {
@@ -14,7 +15,8 @@ PowerKSimulator::PowerKSimulator(int m,
                                  unsigned int workload_seed,
                                  unsigned int allocation_seed,
                                  bool random_initialization_enabled,
-                                 int max_initial_load)
+                                 int max_initial_load,
+                                 CostWeights cost_weights)
     : SimulationBase(m,
                      n,
                      trials,
@@ -23,7 +25,8 @@ PowerKSimulator::PowerKSimulator(int m,
                      workload_seed,
                      allocation_seed,
                      random_initialization_enabled,
-                     max_initial_load),
+                     max_initial_load,
+                     std::move(cost_weights)),
       k_(k) {
     if (k_ <= 0) {
         throw std::invalid_argument("PowerKSimulator requires k to be positive.");

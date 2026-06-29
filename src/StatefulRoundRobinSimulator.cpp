@@ -1,5 +1,7 @@
 #include "balls_bins/StatefulRoundRobinSimulator.h"
 
+#include <utility>
+
 namespace balls_bins {
 
 StatefulRoundRobinSimulator::StatefulRoundRobinSimulator(int m,
@@ -10,7 +12,8 @@ StatefulRoundRobinSimulator::StatefulRoundRobinSimulator(int m,
                                                          unsigned int workload_seed,
                                                          unsigned int allocation_seed,
                                                          bool random_initialization_enabled,
-                                                         int max_initial_load)
+                                                         int max_initial_load,
+                                                         CostWeights cost_weights)
     : SimulationBase(m,
                      n,
                      trials,
@@ -19,7 +22,8 @@ StatefulRoundRobinSimulator::StatefulRoundRobinSimulator(int m,
                      workload_seed,
                      allocation_seed,
                      random_initialization_enabled,
-                     max_initial_load),
+                     max_initial_load,
+                     std::move(cost_weights)),
       current_bin_(0) {
 }
 

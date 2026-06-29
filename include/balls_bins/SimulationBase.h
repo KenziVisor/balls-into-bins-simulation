@@ -10,6 +10,8 @@
 
 namespace balls_bins {
 
+using CostWeights = std::unordered_map<std::string, double>;
+
 class SimulationBase {
 public:
     SimulationBase(int m,
@@ -20,7 +22,8 @@ public:
                    unsigned int workload_seed = 42,
                    unsigned int allocation_seed = 1337,
                    bool random_initialization_enabled = false,
-                   int max_initial_load = 0);
+                   int max_initial_load = 0,
+                   CostWeights cost_weights = {});
     virtual ~SimulationBase() = default;
 
     int getM() const;
@@ -75,7 +78,7 @@ protected:
     std::vector<TrialMetrics> trial_metrics_;
     AggregatedMetrics aggregated_metrics_;
     CostBreakdown cost_breakdown_;
-    std::unordered_map<std::string, double> cost_weights_;
+    CostWeights cost_weights_;
     double total_cost_;
     std::mt19937 rng_;
     std::mt19937 workload_rng_;

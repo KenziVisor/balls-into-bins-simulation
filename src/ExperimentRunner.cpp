@@ -10,6 +10,7 @@
 #include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
 
 namespace balls_bins {
 
@@ -21,6 +22,66 @@ constexpr double kWeightedMaxWeight = 10.0;
 constexpr int kMaxInitialLoad = 100;
 constexpr unsigned int kWorkloadSeed = 42;
 constexpr unsigned int kAllocationSeed = 1337;
+
+const std::vector<int>& configuredBinCounts() {
+    static const std::vector<int> bins{16, 32};
+    return bins;
+}
+
+const CostWeights& defaultCostWeights() {
+    static const CostWeights weights{
+        {"random_draw", 1.0},
+        {"load_read", 3.0},
+        {"compare", 1.0},
+        {"state_read", 3.0},
+        {"state_update", 5.0},
+        {"state_memory_per_slot", 100.0},
+        {"heap_update_per_level", 5.0},
+    };
+
+    return weights;
+}
+
+const std::vector<int>& statelessBaselineKValues() {
+    static const std::vector<int> k_values{1, 2, 3};
+    return k_values;
+}
+
+const std::vector<int>& statefulComparisonKValues() {
+    static const std::vector<int> k_values{1, 2, 3};
+    return k_values;
+}
+
+const std::vector<int>& finalTradeoffKValues() {
+    static const std::vector<int> k_values{1, 2, 3, 4};
+    return k_values;
+}
+
+const std::vector<int>& mainComparisonKValues() {
+    static const std::vector<int> k_values{1, 2};
+    return k_values;
+}
+
+std::vector<int> diminishingReturnKValues(int bins) {
+    if (bins == 16) {
+        return {1, 2, 3, 4, 8, 16};
+    }
+
+    return {1, 2, 3, 4, 8, 16, bins};
+}
+
+std::vector<int> heapSweepSizes(int bins) {
+    if (bins == 16) {
+        return {2, 4, 8, 16};
+    }
+
+    return {2, 4, 8, 16, bins};
+}
+
+const std::vector<int>& finalTradeoffHeapSizes() {
+    static const std::vector<int> heap_sizes{4, 8, 16};
+    return heap_sizes;
+}
 
 std::string boolToString(bool value) {
     return value ? "true" : "false";
@@ -163,6 +224,8 @@ void addPowerPolicies(std::vector<Scenario>& scenarios,
 }
 
 std::unique_ptr<SimulationBase> createSimulator(const Scenario& scenario) {
+    const CostWeights& cost_weights = defaultCostWeights();
+
     if (scenario.simulator_name == "PowerKSimulator") {
         return std::make_unique<PowerKSimulator>(scenario.balls,
                                                  scenario.bins,
@@ -173,7 +236,8 @@ std::unique_ptr<SimulationBase> createSimulator(const Scenario& scenario) {
                                                  scenario.workload_seed,
                                                  scenario.allocation_seed,
                                                  scenario.random_initialization_enabled,
-                                                 scenario.max_initial_load);
+                                                 scenario.max_initial_load,
+                                                 cost_weights);
     }
 
     if (scenario.simulator_name == "StatefulRoundRobinSimulator") {
@@ -185,7 +249,8 @@ std::unique_ptr<SimulationBase> createSimulator(const Scenario& scenario) {
                                                              scenario.workload_seed,
                                                              scenario.allocation_seed,
                                                              scenario.random_initialization_enabled,
-                                                             scenario.max_initial_load);
+                                                             scenario.max_initial_load,
+                                                             cost_weights);
     }
 
     if (scenario.simulator_name == "HeapSizeSPowerOfKSimulator") {
@@ -199,7 +264,8 @@ std::unique_ptr<SimulationBase> createSimulator(const Scenario& scenario) {
                                                             scenario.workload_seed,
                                                             scenario.allocation_seed,
                                                             scenario.random_initialization_enabled,
-                                                            scenario.max_initial_load);
+                                                            scenario.max_initial_load,
+                                                            cost_weights);
     }
 
     throw std::invalid_argument("Unknown simulator: " + scenario.simulator_name);
@@ -253,39 +319,37 @@ void printScenarioDone(const AggregatedMetrics& metrics) {
 
 std::vector<Scenario> buildDefaultScenarios() {
     std::vector<Scenario> scenarios;
-    const std::vector<int> bin_values{16, 32};
 
-    for (const int bins : bin_values) {
+    for (const int bins : configuredBinCounts()) {
+        std::vector<int> k_values = statelessBaselineKValues();
+        k_values.push_back(bins);
         addPowerPolicies(scenarios,
                          "01_stateless_baseline",
                          "Stateless baseline",
                          bins,
                          false,
                          false,
-                         {1, 2, 3, bins});
+                         k_values);
     }
 
-    for (const int bins : bin_values) {
-        const std::vector<int> k_values =
-            bins == 16 ? std::vector<int>{1, 2, 3, 4, 8, 16}
-                       : std::vector<int>{1, 2, 3, 4, 8, 16, 32};
+    for (const int bins : configuredBinCounts()) {
         addPowerPolicies(scenarios,
                          "02_diminishing_returns",
                          "Diminishing returns of k",
                          bins,
                          false,
                          false,
-                         k_values);
+                         diminishingReturnKValues(bins));
     }
 
-    for (const int bins : bin_values) {
+    for (const int bins : configuredBinCounts()) {
         addPowerPolicies(scenarios,
                          "03_stateful_vs_stateless_unweighted",
                          "Stateful vs stateless under equal weights",
                          bins,
                          false,
                          false,
-                         {1, 2, 3});
+                         statefulComparisonKValues());
         addScenario(scenarios,
                     makeRoundRobinScenario("03_stateful_vs_stateless_unweighted",
                                            "Stateful vs stateless under equal weights",
@@ -300,14 +364,14 @@ std::vector<Scenario> buildDefaultScenarios() {
                                       false));
     }
 
-    for (const int bins : bin_values) {
+    for (const int bins : configuredBinCounts()) {
         addPowerPolicies(scenarios,
                          "04_weighted_round_robin_break",
                          "Weighted balls break round-robin",
                          bins,
                          true,
                          false,
-                         {1, 2, 3});
+                         statefulComparisonKValues());
         addScenario(scenarios,
                     makeRoundRobinScenario("04_weighted_round_robin_break",
                                            "Weighted balls break round-robin",
@@ -322,11 +386,8 @@ std::vector<Scenario> buildDefaultScenarios() {
                                       true));
     }
 
-    for (const int bins : bin_values) {
-        const std::vector<int> heap_sizes =
-            bins == 16 ? std::vector<int>{2, 4, 8, 16}
-                       : std::vector<int>{2, 4, 8, 16, 32};
-        for (const int heap_size : heap_sizes) {
+    for (const int bins : configuredBinCounts()) {
+        for (const int heap_size : heapSweepSizes(bins)) {
             const bool full_heap = heap_size == bins;
             addScenario(scenarios,
                         makeHeapScenario("05_heap_sweep",
@@ -341,7 +402,7 @@ std::vector<Scenario> buildDefaultScenarios() {
         }
     }
 
-    for (const int bins : bin_values) {
+    for (const int bins : configuredBinCounts()) {
         for (const bool weighted_balls : {false, true}) {
             const std::string experiment_id =
                 weighted_balls ? "07_final_tradeoff_weighted"
@@ -356,7 +417,7 @@ std::vector<Scenario> buildDefaultScenarios() {
                              bins,
                              weighted_balls,
                              false,
-                             {1, 2, 3, 4});
+                             finalTradeoffKValues());
             addScenario(scenarios,
                         makePowerScenario(experiment_id,
                                           experiment_title,
@@ -372,7 +433,7 @@ std::vector<Scenario> buildDefaultScenarios() {
                                                bins,
                                                weighted_balls));
 
-            for (const int heap_size : {4, 8, 16}) {
+            for (const int heap_size : finalTradeoffHeapSizes()) {
                 if (heap_size >= bins) {
                     continue;
                 }
@@ -407,14 +468,14 @@ std::vector<Scenario> buildDefaultScenarios() {
             const std::string main_title = "Main comparison " + mode;
             const std::string tradeoff_title = "Cost-quality tradeoff " + mode;
 
-            for (const int bins : bin_values) {
+            for (const int bins : configuredBinCounts()) {
                 addPowerPolicies(scenarios,
                                  main_id,
                                  main_title,
                                  bins,
                                  weighted_balls,
                                  initialized,
-                                 {1, 2});
+                                 mainComparisonKValues());
                 addScenario(scenarios,
                             makePowerScenario(main_id,
                                               main_title,
@@ -438,7 +499,7 @@ std::vector<Scenario> buildDefaultScenarios() {
                                  bins,
                                  weighted_balls,
                                  initialized,
-                                 {1, 2, 3, 4});
+                                 finalTradeoffKValues());
                 addScenario(scenarios,
                             makePowerScenario(tradeoff_id,
                                               tradeoff_title,

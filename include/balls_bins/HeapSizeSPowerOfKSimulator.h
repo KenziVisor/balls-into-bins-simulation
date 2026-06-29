@@ -19,7 +19,8 @@ public:
                                unsigned int workload_seed = 42,
                                unsigned int allocation_seed = 1337,
                                bool random_initialization_enabled = false,
-                               int max_initial_load = 0);
+                               int max_initial_load = 0,
+                               CostWeights cost_weights = {});
 
     int getHeapSize() const;
     int getK() const;

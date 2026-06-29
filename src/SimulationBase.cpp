@@ -1,6 +1,7 @@
 #include "balls_bins/SimulationBase.h"
 
 #include <algorithm>
+#include <array>
 #include <numeric>
 #include <stdexcept>
 #include <utility>
@@ -15,7 +16,8 @@ SimulationBase::SimulationBase(int m,
                                unsigned int workload_seed,
                                unsigned int allocation_seed,
                                bool random_initialization_enabled,
-                               int max_initial_load)
+                               int max_initial_load,
+                               CostWeights cost_weights)
     : m_(m),
       n_(n),
       trials_(trials),
@@ -26,15 +28,7 @@ SimulationBase::SimulationBase(int m,
       workload_seed_(workload_seed),
       allocation_seed_(allocation_seed),
       bins_(),
-      cost_weights_{
-          {"random_draw", 1.0},
-          {"load_read", 3.0},
-          {"compare", 1.0},
-          {"state_read", 3.0},
-          {"state_update", 5.0},
-          {"state_memory_per_slot", 100.0},
-          {"heap_update_per_level", 5.0},
-      },
+      cost_weights_(std::move(cost_weights)),
       total_cost_(0.0),
       rng_(allocation_seed_),
       workload_rng_(workload_seed_),
@@ -57,6 +51,22 @@ SimulationBase::SimulationBase(int m,
 
     if (max_initial_load_ < 0) {
         throw std::invalid_argument("Maximum initial load must be non-negative.");
+    }
+
+    const std::array<std::string, 7> required_cost_weights{
+        "random_draw",
+        "load_read",
+        "compare",
+        "state_read",
+        "state_update",
+        "state_memory_per_slot",
+        "heap_update_per_level",
+    };
+
+    for (const std::string& key : required_cost_weights) {
+        if (cost_weights_.find(key) == cost_weights_.end()) {
+            throw std::invalid_argument("Missing cost weight: " + key);
+        }
     }
 
     bins_.assign(static_cast<std::size_t>(n_), 0.0);

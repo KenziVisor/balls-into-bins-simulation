@@ -77,12 +77,18 @@ def save_figure(fig, filename):
     plt.close(fig)
 
 
-def remove_old_heap_sweep_plots():
-    for filename in ("05_heap_sweep_max_load.png", "05_heap_sweep_cv_load.png"):
-        path = PLOTS_DIR / filename
-        if path.exists():
-            path.unlink()
+def remove_old_plots():
+    obsolete_patterns = (
+        "05_heap_sweep_max_load.png",
+        "05_heap_sweep_cv_load.png",
+        "*_max_load_n16.png",
+        "*_max_load_n32.png",
+    )
 
+    for pattern in obsolete_patterns:
+        for path in PLOTS_DIR.glob(pattern):
+            if path.exists():
+                path.unlink()
 
 def metric_label(metric):
     if metric == "max_load_mean":
@@ -177,6 +183,98 @@ def panel_plot(
     else:
         bottom_axis.set_xticks(x_values)
 
+    save_figure(fig, filename)
+
+
+def split_axis_panel_plot(
+    df,
+    experiment_id,
+    filename,
+    metric,
+    x_column,
+    x_label,
+    title,
+    reference_column=None,
+    reference_label=None,
+    title_note=None,
+):
+    data = df[df["experiment_id"] == experiment_id].copy()
+    bin_values = sorted(data["bins"].unique())
+    fig, axes = plt.subplots(2, len(bin_values), figsize=(6 * len(bin_values), 8))
+
+    if len(bin_values) == 1:
+        metric_axes = [axes[0]]
+        cost_axes = [axes[1]]
+    else:
+        metric_axes = axes[0]
+        cost_axes = axes[1]
+
+    categorical = x_column == "policy_name"
+    if categorical:
+        x_values = unique_in_order(data[x_column].tolist())
+        x_lookup = {value: index for index, value in enumerate(x_values)}
+    else:
+        x_values = sorted(data[x_column].unique())
+        x_lookup = {value: value for value in x_values}
+
+    for axis_index, bins in enumerate(bin_values):
+        metric_axis = metric_axes[axis_index]
+        cost_axis = cost_axes[axis_index]
+        subset = data[data["bins"] == bins].copy()
+        subset["_x"] = subset[x_column].map(x_lookup)
+        subset = subset.sort_values("_x")
+        color = COLORS.get(int(bins), None)
+        marker = BIN_MARKERS.get(int(bins), "o")
+
+        metric_axis.errorbar(
+            subset["_x"],
+            subset[metric],
+            yerr=subset[stddev_column(metric)],
+            marker=marker,
+            color=color,
+            linewidth=2,
+            capsize=3,
+            label=f"n={int(bins)}",
+        )
+        cost_axis.errorbar(
+            subset["_x"],
+            subset["cost_per_ball_mean"],
+            yerr=subset["cost_per_ball_stddev"],
+            marker=marker,
+            color=color,
+            linewidth=2,
+            capsize=3,
+            label=f"n={int(bins)}",
+        )
+
+        if reference_column is not None:
+            metric_axis.plot(
+                subset["_x"],
+                subset[reference_column],
+                linestyle="--",
+                marker="x",
+                color=color,
+                alpha=0.8,
+                label=reference_label,
+            )
+
+        metric_axis.set_title(f"n={int(bins)}", fontsize=12)
+        metric_axis.set_ylabel(metric_label(metric), fontsize=11)
+        cost_axis.set_ylabel("Cost per ball", fontsize=11)
+        cost_axis.set_xlabel(x_label, fontsize=11)
+        metric_axis.grid(True, alpha=0.25)
+        cost_axis.grid(True, alpha=0.25)
+        metric_axis.legend(fontsize=9)
+        cost_axis.legend(fontsize=9)
+
+        if categorical:
+            cost_axis.set_xticks(list(range(len(x_values))))
+            cost_axis.set_xticklabels(x_values, rotation=30, ha="right")
+        else:
+            cost_axis.set_xticks(x_values)
+
+    full_title = title if title_note is None else f"{title}\n{title_note}"
+    fig.suptitle(full_title, fontsize=14)
     save_figure(fig, filename)
 
 
@@ -373,9 +471,9 @@ def final_tradeoff_plot(
 
 def main():
     df = load_results()
-    remove_old_heap_sweep_plots()
+    remove_old_plots()
 
-    panel_plot(
+    split_axis_panel_plot(
         df,
         "01_stateless_baseline",
         "01_stateless_baseline_max_load.png",
@@ -397,7 +495,7 @@ def main():
         reference_column="reference_cv_load",
         reference_label="optimal CV",
     )
-    panel_plot(
+    split_axis_panel_plot(
         df,
         "02_diminishing_returns",
         "02_diminishing_returns_max_load.png",
@@ -419,7 +517,7 @@ def main():
         reference_column="reference_cv_load",
         reference_label="optimal CV",
     )
-    panel_plot(
+    split_axis_panel_plot(
         df,
         "03_stateful_vs_stateless_unweighted",
         "03_stateful_vs_stateless_unweighted_max_load.png",
@@ -441,7 +539,7 @@ def main():
         reference_column="reference_cv_load",
         reference_label="optimal CV",
     )
-    panel_plot(
+    split_axis_panel_plot(
         df,
         "04_weighted_round_robin_break",
         "04_weighted_round_robin_break_max_load.png",
@@ -508,7 +606,7 @@ def main():
         tradeoff_id = f"09_tradeoff_{mode}"
         title_mode = mode.replace("_", " ")
 
-        panel_plot(
+        split_axis_panel_plot(
             df,
             main_id,
             f"08_main_comparison_{mode}_max_load.png",
