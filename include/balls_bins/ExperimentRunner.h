@@ -1,6 +1,7 @@
 #ifndef BALLS_BINS_EXPERIMENT_RUNNER_H
 #define BALLS_BINS_EXPERIMENT_RUNNER_H
 
+#include "balls_bins/SimulationBase.h"
 #include "balls_bins/SimulationMetrics.h"
 #include "balls_bins/SimulationReferences.h"
 
@@ -27,6 +28,7 @@ struct Scenario {
     bool random_initialization_enabled = false;
     int max_initial_load = 0;
     std::string mode_label;
+    CostWeights cost_weights;
 };
 
 struct ScenarioResult {

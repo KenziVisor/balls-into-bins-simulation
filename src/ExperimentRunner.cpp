@@ -110,6 +110,29 @@ std::string modeLabel(bool weighted_balls, bool random_initialization_enabled) {
            (random_initialization_enabled ? "initialized" : "empty");
 }
 
+std::string displayPolicyName(const Scenario& scenario) {
+    const std::string weighted_suffix = " weighted";
+    if (scenario.weighted_balls &&
+        scenario.policy_name.size() > weighted_suffix.size() &&
+        scenario.policy_name.compare(scenario.policy_name.size() -
+                                         weighted_suffix.size(),
+                                     weighted_suffix.size(),
+                                     weighted_suffix) == 0) {
+        return scenario.policy_name.substr(
+            0, scenario.policy_name.size() - weighted_suffix.size());
+    }
+
+    return scenario.policy_name;
+}
+
+std::string weightDescription(bool weighted_balls) {
+    return weighted_balls ? "weighted balls" : "unweighted balls";
+}
+
+std::string initializationDescription(bool random_initialization_enabled) {
+    return random_initialization_enabled ? "initialized bins" : "empty bins";
+}
+
 Scenario makePowerScenario(const std::string& experiment_id,
                            const std::string& experiment_title,
                            const std::string& policy_name,
@@ -133,7 +156,8 @@ Scenario makePowerScenario(const std::string& experiment_id,
             0,
             random_initialization_enabled,
             random_initialization_enabled ? kMaxInitialLoad : 0,
-            modeLabel(weighted_balls, random_initialization_enabled)};
+            modeLabel(weighted_balls, random_initialization_enabled),
+            {}};
 }
 
 Scenario makeRoundRobinScenario(const std::string& experiment_id,
@@ -157,7 +181,8 @@ Scenario makeRoundRobinScenario(const std::string& experiment_id,
             0,
             random_initialization_enabled,
             random_initialization_enabled ? kMaxInitialLoad : 0,
-            modeLabel(weighted_balls, random_initialization_enabled)};
+            modeLabel(weighted_balls, random_initialization_enabled),
+            {}};
 }
 
 Scenario makeHeapScenario(const std::string& experiment_id,
@@ -184,7 +209,8 @@ Scenario makeHeapScenario(const std::string& experiment_id,
             heap_size,
             random_initialization_enabled,
             random_initialization_enabled ? kMaxInitialLoad : 0,
-            modeLabel(weighted_balls, random_initialization_enabled)};
+            modeLabel(weighted_balls, random_initialization_enabled),
+            {}};
 }
 
 void addScenario(std::vector<Scenario>& scenarios, const Scenario& scenario) {
@@ -224,7 +250,8 @@ void addPowerPolicies(std::vector<Scenario>& scenarios,
 }
 
 std::unique_ptr<SimulationBase> createSimulator(const Scenario& scenario) {
-    const CostWeights& cost_weights = defaultCostWeights();
+    const CostWeights& cost_weights =
+        scenario.cost_weights.empty() ? defaultCostWeights() : scenario.cost_weights;
 
     if (scenario.simulator_name == "PowerKSimulator") {
         return std::make_unique<PowerKSimulator>(scenario.balls,
@@ -289,8 +316,12 @@ void printScenarioStart(const Scenario& scenario,
                         std::size_t scenario_index,
                         std::size_t scenario_count) {
     std::cout << '[' << scenario_index << '/' << scenario_count << "] "
-              << scenario.experiment_id << " | " << scenario.policy_name
-              << " | n=" << scenario.bins << " | " << scenario.mode_label;
+              << scenario.experiment_id << " | " << displayPolicyName(scenario)
+              << " | " << weightDescription(scenario.weighted_balls)
+              << " | balls=" << scenario.balls << " | bins=" << scenario.bins
+              << " | trials=" << scenario.trials << " | "
+              << initializationDescription(
+                     scenario.random_initialization_enabled);
 
     if (scenario.k > 0 || scenario.simulator_name == "PowerKSimulator" ||
         scenario.simulator_name == "HeapSizeSPowerOfKSimulator") {
@@ -299,6 +330,10 @@ void printScenarioStart(const Scenario& scenario,
 
     if (scenario.heap_size > 0) {
         std::cout << " | heap_size=" << scenario.heap_size;
+    }
+
+    if (scenario.weighted_balls) {
+        std::cout << " | max_weight=" << scenario.max_weight;
     }
 
     if (scenario.random_initialization_enabled) {
@@ -579,16 +614,19 @@ void exportScenarioResultsCsv(const std::vector<ScenarioResult>& results,
                      "heap_size",
                      "average_load_mean",
                      "average_load_stddev",
-                     "min_load_mean",
-                     "min_load_stddev",
+                     "reference_type",
+                     "reference_max_load",
                      "max_load_mean",
                      "max_load_stddev",
+                     "min_load_mean",
+                     "min_load_stddev",
                      "max_min_gap_mean",
                      "max_min_gap_stddev",
                      "load_stddev_mean",
                      "load_stddev_stddev",
                      "cv_load_mean",
                      "cv_load_stddev",
+                     "reference_cv_load",
                      "normalized_max_load_mean",
                      "normalized_max_load_stddev",
                      "normalized_gap_mean",
@@ -606,9 +644,6 @@ void exportScenarioResultsCsv(const std::vector<ScenarioResult>& results,
                      "heap_update_cost_per_ball",
                      "stateless_cost_per_ball",
                      "stateful_cost_per_ball",
-                     "reference_type",
-                     "reference_max_load",
-                     "reference_cv_load",
                      "reference_note"});
 
     for (const ScenarioResult& result : results) {
@@ -637,16 +672,19 @@ void exportScenarioResultsCsv(const std::vector<ScenarioResult>& results,
                          intToString(scenario.heap_size),
                          numberToString(metrics.average_load.mean),
                          numberToString(metrics.average_load.stddev),
-                         numberToString(metrics.min_load.mean),
-                         numberToString(metrics.min_load.stddev),
+                         referenceTypeToString(result.reference.type),
+                         numberToString(result.reference.max_load),
                          numberToString(metrics.max_load.mean),
                          numberToString(metrics.max_load.stddev),
+                         numberToString(metrics.min_load.mean),
+                         numberToString(metrics.min_load.stddev),
                          numberToString(metrics.max_min_gap.mean),
                          numberToString(metrics.max_min_gap.stddev),
                          numberToString(metrics.stddev_load.mean),
                          numberToString(metrics.stddev_load.stddev),
                          numberToString(metrics.cv_load.mean),
                          numberToString(metrics.cv_load.stddev),
+                         numberToString(result.reference.cv_load),
                          numberToString(metrics.normalized_max_load.mean),
                          numberToString(metrics.normalized_max_load.stddev),
                          numberToString(metrics.normalized_gap.mean),
@@ -673,9 +711,6 @@ void exportScenarioResultsCsv(const std::vector<ScenarioResult>& results,
                                                 scenario.balls)),
                          numberToString(perBall(metrics.stateful_cost,
                                                 scenario.balls)),
-                         referenceTypeToString(result.reference.type),
-                         numberToString(result.reference.max_load),
-                         numberToString(result.reference.cv_load),
                          result.reference_note});
     }
 }
