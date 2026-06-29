@@ -18,14 +18,18 @@ public:
                    bool weighted_balls = false,
                    double max_weight = 1.0,
                    unsigned int workload_seed = 42,
-                   unsigned int allocation_seed = 1337);
+                   unsigned int allocation_seed = 1337,
+                   bool random_initialization_enabled = false,
+                   int max_initial_load = 0);
     virtual ~SimulationBase() = default;
 
     int getM() const;
     int getN() const;
     int getTrials() const;
     bool isWeightedBalls() const;
+    bool isRandomInitializationEnabled() const;
     double getMaxWeight() const;
+    int getMaxInitialLoad() const;
     unsigned int getWorkloadSeed() const;
     unsigned int getAllocationSeed() const;
     const std::vector<double>& getBins() const;
@@ -48,6 +52,7 @@ protected:
     double readBinLoad(int bin_index);
     bool lessThan(double a, double b);
     void addBallToBin(int bin_index, double weight);
+    void initializeBinLoads();
     void validateBinIndex(int bin_index) const;
     void addRandomDrawCost(double units);
     void addLoadReadCost(double units);
@@ -62,6 +67,8 @@ protected:
     int trials_;
     bool weighted_balls_;
     double max_weight_;
+    bool random_initialization_enabled_;
+    int max_initial_load_;
     unsigned int workload_seed_;
     unsigned int allocation_seed_;
     std::vector<double> bins_;
@@ -72,6 +79,7 @@ protected:
     double total_cost_;
     std::mt19937 rng_;
     std::mt19937 workload_rng_;
+    std::mt19937 initialization_rng_;
 };
 
 }  // namespace balls_bins

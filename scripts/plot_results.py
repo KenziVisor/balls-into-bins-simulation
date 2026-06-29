@@ -43,6 +43,13 @@ IMPORTANT_POLICIES = {
     "Heap s=8",
 }
 
+SCENARIO_MODES = [
+    "unweighted_empty",
+    "weighted_empty",
+    "unweighted_initialized",
+    "weighted_initialized",
+]
+
 
 def unique_in_order(values):
     seen = set()
@@ -494,7 +501,61 @@ def main():
         "Experiment 7: Final tradeoff weighted - CV load",
     )
 
-    print(f"Generated 14 plots in {PLOTS_DIR}/")
+    generated_plot_count = 14
+
+    for mode in SCENARIO_MODES:
+        main_id = f"08_main_comparison_{mode}"
+        tradeoff_id = f"09_tradeoff_{mode}"
+        title_mode = mode.replace("_", " ")
+
+        panel_plot(
+            df,
+            main_id,
+            f"08_main_comparison_{mode}_max_load.png",
+            "max_load_mean",
+            "policy_name",
+            "Policy",
+            f"Main comparison: {title_mode} - max load",
+            reference_column="reference_max_load",
+            reference_label=(
+                "optimal" if mode == "unweighted_empty" else "average-load lower bound"
+            ),
+        )
+        panel_plot(
+            df,
+            main_id,
+            f"08_main_comparison_{mode}_cv_load.png",
+            "cv_load_mean",
+            "policy_name",
+            "Policy",
+            f"Main comparison: {title_mode} - CV load",
+            reference_column="reference_cv_load" if mode == "unweighted_empty" else None,
+            reference_label="optimal CV",
+        )
+        final_tradeoff_plot(
+            df,
+            tradeoff_id,
+            f"09_tradeoff_{mode}_max_load.png",
+            "max_load_mean",
+            f"Cost-quality tradeoff: {title_mode} - max load",
+            reference_column="reference_max_load",
+            reference_note=(
+                "Lower bound = total load / bins; true optimum is not computed"
+                if mode != "unweighted_empty"
+                else None
+            ),
+        )
+        final_tradeoff_plot(
+            df,
+            tradeoff_id,
+            f"09_tradeoff_{mode}_cv_load.png",
+            "cv_load_mean",
+            f"Cost-quality tradeoff: {title_mode} - CV load",
+            reference_column="reference_cv_load" if mode == "unweighted_empty" else None,
+        )
+        generated_plot_count += 4
+
+    print(f"Generated {generated_plot_count} plots in {PLOTS_DIR}/")
 
 
 if __name__ == "__main__":

@@ -13,12 +13,16 @@ SimulationBase::SimulationBase(int m,
                                bool weighted_balls,
                                double max_weight,
                                unsigned int workload_seed,
-                               unsigned int allocation_seed)
+                               unsigned int allocation_seed,
+                               bool random_initialization_enabled,
+                               int max_initial_load)
     : m_(m),
       n_(n),
       trials_(trials),
       weighted_balls_(weighted_balls),
       max_weight_(max_weight),
+      random_initialization_enabled_(random_initialization_enabled),
+      max_initial_load_(max_initial_load),
       workload_seed_(workload_seed),
       allocation_seed_(allocation_seed),
       bins_(),
@@ -28,12 +32,13 @@ SimulationBase::SimulationBase(int m,
           {"compare", 1.0},
           {"state_read", 3.0},
           {"state_update", 5.0},
-          {"state_memory_per_slot", 3.0},
+          {"state_memory_per_slot", 100.0},
           {"heap_update_per_level", 5.0},
       },
       total_cost_(0.0),
       rng_(allocation_seed_),
-      workload_rng_(workload_seed_) {
+      workload_rng_(workload_seed_),
+      initialization_rng_(workload_seed_ + 1000003U) {
     if (m_ < 0) {
         throw std::invalid_argument("Number of balls must be non-negative.");
     }
@@ -48,6 +53,10 @@ SimulationBase::SimulationBase(int m,
 
     if (max_weight_ < 1.0) {
         throw std::invalid_argument("Maximum ball weight must be at least 1.0.");
+    }
+
+    if (max_initial_load_ < 0) {
+        throw std::invalid_argument("Maximum initial load must be non-negative.");
     }
 
     bins_.assign(static_cast<std::size_t>(n_), 0.0);
@@ -69,8 +78,16 @@ bool SimulationBase::isWeightedBalls() const {
     return weighted_balls_;
 }
 
+bool SimulationBase::isRandomInitializationEnabled() const {
+    return random_initialization_enabled_;
+}
+
 double SimulationBase::getMaxWeight() const {
     return max_weight_;
+}
+
+int SimulationBase::getMaxInitialLoad() const {
+    return max_initial_load_;
 }
 
 unsigned int SimulationBase::getWorkloadSeed() const {
@@ -154,6 +171,9 @@ void SimulationBase::run() {
         reset();
         rng_.seed(allocation_seed_ + static_cast<unsigned int>(trial));
         workload_rng_.seed(workload_seed_ + static_cast<unsigned int>(trial));
+        initialization_rng_.seed(workload_seed_ + 1000003U +
+                                 static_cast<unsigned int>(trial));
+        initializeBinLoads();
         runSingleTrial();
 
         trial_metrics_.push_back(
@@ -226,6 +246,19 @@ bool SimulationBase::lessThan(double a, double b) {
 void SimulationBase::addBallToBin(int bin_index, double weight) {
     validateBinIndex(bin_index);
     bins_[static_cast<std::size_t>(bin_index)] += weight;
+}
+
+void SimulationBase::initializeBinLoads() {
+    if (!random_initialization_enabled_) {
+        return;
+    }
+
+    std::uniform_int_distribution<int> distribution(0, max_initial_load_);
+
+    // Synthetic initial condition: it affects decisions, but is not charged.
+    for (double& load : bins_) {
+        load = static_cast<double>(distribution(initialization_rng_));
+    }
 }
 
 void SimulationBase::validateBinIndex(int bin_index) const {

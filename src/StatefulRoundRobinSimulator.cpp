@@ -8,14 +8,18 @@ StatefulRoundRobinSimulator::StatefulRoundRobinSimulator(int m,
                                                          bool weighted_balls,
                                                          double max_weight,
                                                          unsigned int workload_seed,
-                                                         unsigned int allocation_seed)
+                                                         unsigned int allocation_seed,
+                                                         bool random_initialization_enabled,
+                                                         int max_initial_load)
     : SimulationBase(m,
                      n,
                      trials,
                      weighted_balls,
                      max_weight,
                      workload_seed,
-                     allocation_seed),
+                     allocation_seed,
+                     random_initialization_enabled,
+                     max_initial_load),
       current_bin_(0) {
 }
 

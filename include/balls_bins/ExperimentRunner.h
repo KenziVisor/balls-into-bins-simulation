@@ -24,6 +24,9 @@ struct Scenario {
     unsigned int allocation_seed = 1337;
     int k = 0;
     int heap_size = 0;
+    bool random_initialization_enabled = false;
+    int max_initial_load = 0;
+    std::string mode_label;
 };
 
 struct ScenarioResult {

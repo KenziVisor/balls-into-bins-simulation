@@ -16,14 +16,18 @@ HeapSizeSPowerOfKSimulator::HeapSizeSPowerOfKSimulator(int m,
                                                        bool weighted_balls,
                                                        double max_weight,
                                                        unsigned int workload_seed,
-                                                       unsigned int allocation_seed)
+                                                       unsigned int allocation_seed,
+                                                       bool random_initialization_enabled,
+                                                       int max_initial_load)
     : SimulationBase(m,
                      n,
                      trials,
                      weighted_balls,
                      max_weight,
                      workload_seed,
-                     allocation_seed),
+                     allocation_seed,
+                     random_initialization_enabled,
+                     max_initial_load),
       heap_(),
       untracked_bins_(),
       heap_positions_(),
@@ -79,7 +83,7 @@ void HeapSizeSPowerOfKSimulator::initializeTrialState() {
     untracked_positions_.assign(static_cast<std::size_t>(n_), -1);
 
     for (int bin = 0; bin < s_; ++bin) {
-        heap_.push_back({0.0, bin});
+        heap_.push_back({bins_[static_cast<std::size_t>(bin)], bin});
         heap_positions_[static_cast<std::size_t>(bin)] = bin;
     }
 

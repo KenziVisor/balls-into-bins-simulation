@@ -12,14 +12,18 @@ PowerKSimulator::PowerKSimulator(int m,
                                  bool weighted_balls,
                                  double max_weight,
                                  unsigned int workload_seed,
-                                 unsigned int allocation_seed)
+                                 unsigned int allocation_seed,
+                                 bool random_initialization_enabled,
+                                 int max_initial_load)
     : SimulationBase(m,
                      n,
                      trials,
                      weighted_balls,
                      max_weight,
                      workload_seed,
-                     allocation_seed),
+                     allocation_seed,
+                     random_initialization_enabled,
+                     max_initial_load),
       k_(k) {
     if (k_ <= 0) {
         throw std::invalid_argument("PowerKSimulator requires k to be positive.");

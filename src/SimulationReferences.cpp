@@ -54,19 +54,22 @@ double computeUnweightedOptimalCvLoad(int balls, int bins) {
 ReferenceMetrics computeReferenceMetrics(int balls,
                                          int bins,
                                          bool weighted_balls,
-                                         double average_load) {
+                                         double average_load,
+                                         bool random_initialization_enabled) {
     validateReferenceInputs(balls, bins);
 
-    if (!weighted_balls) {
+    if (!weighted_balls && !random_initialization_enabled) {
         return {ReferenceType::UnweightedOptimal,
                 computeUnweightedOptimalMaxLoad(balls, bins),
                 computeUnweightedOptimalCvLoad(balls, bins)};
     }
 
-    // For weighted balls, average load is only a lower bound on max load.
-    // The true weighted optimum is a partition/bin-packing style problem and
-    // is intentionally not computed here.
-    return {ReferenceType::WeightedAverageLowerBound, average_load, 0.0};
+    // With weighted arrivals or synthetic initial loads, average load is only
+    // a lower bound on max load. True optimum is intentionally not computed.
+    return {weighted_balls ? ReferenceType::WeightedAverageLowerBound
+                           : ReferenceType::AverageLoadLowerBound,
+            average_load,
+            0.0};
 }
 
 std::string referenceTypeToString(ReferenceType type) {
@@ -75,6 +78,8 @@ std::string referenceTypeToString(ReferenceType type) {
             return "none";
         case ReferenceType::UnweightedOptimal:
             return "unweighted_optimal";
+        case ReferenceType::AverageLoadLowerBound:
+            return "average_load_lower_bound";
         case ReferenceType::WeightedAverageLowerBound:
             return "weighted_average_lower_bound";
     }

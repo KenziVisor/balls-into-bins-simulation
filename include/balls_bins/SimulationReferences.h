@@ -8,6 +8,7 @@ namespace balls_bins {
 enum class ReferenceType {
     None,
     UnweightedOptimal,
+    AverageLoadLowerBound,
     WeightedAverageLowerBound
 };
 
@@ -23,7 +24,8 @@ double computeUnweightedOptimalCvLoad(int balls, int bins);
 ReferenceMetrics computeReferenceMetrics(int balls,
                                          int bins,
                                          bool weighted_balls,
-                                         double average_load);
+                                         double average_load,
+                                         bool random_initialization_enabled = false);
 
 std::string referenceTypeToString(ReferenceType type);
 
