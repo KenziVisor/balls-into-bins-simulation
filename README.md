@@ -1,5 +1,12 @@
 # Balls Into Bins Simulation
 
+![Diagram 9 - Random initialization + weighted balls: max-load cost-quality tradeoff](plots/09_tradeoff_weighted_initialized_max_load.png)
+
+**Diagram 9 - Random initialization + weighted balls.** This plot shows the
+max-load cost-quality tradeoff for the most realistic stress case in the
+experiment suite: bins start with randomized load, and incoming balls have
+variable weights.
+
 This project simulates balls-into-bins load balancing strategies for a Cisco
 interview homework exercise. It compares how well different allocation policies
 reduce bin imbalance, and how much algorithmic cost they pay to achieve that
@@ -215,18 +222,6 @@ Key plot groups:
 - Diagrams 6-7: final unweighted and weighted tradeoffs.
 - Diagram 8: main policy comparisons for each mode.
 - Diagram 9: cost-quality tradeoff plots for each mode.
-
-Diagram 9 includes the combined stress case:
-
-```text
-plots/09_tradeoff_weighted_initialized_max_load.png
-plots/09_tradeoff_weighted_initialized_cv_load.png
-```
-
-These are the "Diagram 9 - Random initialization + weighted balls" plots. They
-show the cost-quality tradeoff when bins start with existing random load and
-incoming balls also have variable weights. This mode is intended to stress the
-algorithms more realistically than the clean unweighted, empty-bin case.
 
 ## Cost Model
 
